@@ -16,6 +16,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -118,7 +119,19 @@ func main() {
 		usage()
 	}
 
+	if title == "" {
+		if wd, err := os.Getwd(); err == nil {
+			title = filepath.Base(wd) // e.g. as git's pager: the repo's folder
+		}
+	}
+
 	files := Parse(bytes.NewReader(input))
+	// As git's pager: nothing to show for an empty diff, and output that is
+	// not a diff (git diff --stat, --name-only) is printed as it is.
+	if len(files) == 0 {
+		os.Stdout.Write(input)
+		return
+	}
 	// With stdin used for the diff, bubbletea reads keys from the terminal.
 	p := tea.NewProgram(newModel(files, title))
 	if _, err := p.Run(); err != nil {

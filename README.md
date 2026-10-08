@@ -31,6 +31,15 @@ pager:
 `navigation: arrows`) opens that commit. gh-dash sets `GHDIFF_TITLE` for the
 title bar.
 
+## As git's diff pager
+
+```
+git config --global pager.diff ghdiff
+```
+
+Only `git diff` changes; `git log`/`git show` keep `core.pager`. An empty diff
+exits at once, and `git diff --stat` / `--name-only` print as usual.
+
 ## Building
 
 `go build -o ghdiff .` with Go 1.27 or newer, or with Nix (below).
