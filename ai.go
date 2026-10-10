@@ -35,6 +35,13 @@ type convo struct {
 	busy         bool
 	scroll       int
 	cancel       context.CancelFunc
+
+	// Posting to the PR (post.go).
+	commentID int64 // the thread's first comment, once posted
+	posted    int   // turns already posted
+	posting   bool
+	postNote  string // the last post's link, or why it failed
+	postErr   bool
 }
 
 type answerMsg struct {
@@ -67,17 +74,18 @@ func (t target) String() string {
 // chatState is the model's part for asking: the open conversation, the
 // question being typed, and whether Claude may read the local repo.
 type chatState struct {
-	target   target
-	diff     []byte            // the diff as read, for context
-	convos   map[string]*convo // by selection, so reopening one resumes it
-	chat     *convo            // open in the bottom pane
-	typing   bool
-	input    []rune
-	raw      bool   // show answers as Claude wrote them, not rendered
-	repo     string // local clone holding the diff's files, "" if none
-	repoOK   int    // 0 not asked yet, 1 yes, -1 no
-	consent  bool   // waiting for y/n on reading repo
-	pendingQ string // the question held while asking for consent
+	target      target
+	diff        []byte            // the diff as read, for context
+	convos      map[string]*convo // by selection, so reopening one resumes it
+	chat        *convo            // open in the bottom pane
+	typing      bool
+	input       []rune
+	raw         bool   // show answers as Claude wrote them, not rendered
+	repo        string // local clone holding the diff's files, "" if none
+	repoOK      int    // 0 not asked yet, 1 yes, -1 no
+	consent     bool   // waiting for y/n on reading repo
+	confirmPost bool   // waiting for y/n on posting to the PR
+	pendingQ    string // the question held while asking for consent
 }
 
 // findRepo returns a local clone Claude can read: gh-dash's repoPaths entry,
@@ -157,6 +165,12 @@ func (m *model) closeChat() {
 func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 	k := msg.String()
 	switch {
+	case m.confirmPost:
+		m.confirmPost = false
+		if k == "y" && m.canPost() {
+			m.chat.posting, m.chat.postNote = true, ""
+			return m.post()
+		}
 	case m.consent:
 		switch k {
 		case "y", "n":
@@ -203,6 +217,14 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 			m.closeChat()
 		case "m":
 			m.raw = !m.raw
+		case "P":
+			switch {
+			case m.target.repo == "" || m.target.pr == 0:
+				m.chat.postNote, m.chat.postErr = "No PR to post to: open the diff from gh-dash, or with ghdiff --pr N -R owner/repo.", true
+			case m.canPost():
+				m.confirmPost = true
+			}
+			m.chat.scroll = 1 << 30
 		case "q", "ctrl+c":
 			return tea.Quit
 		case "up", "k":
@@ -397,6 +419,24 @@ func (m *model) chatView() []string {
 			body = append(body, strings.Split(m.markdown(&c.turns[i], w-2), "\n")...)
 		}
 	}
+	switch {
+	case m.confirmPost:
+		what := "this conversation"
+		if c.posted > 0 {
+			what = "the new questions and answers, as a reply"
+		}
+		body = append(body, "", lipgloss.NewStyle().Bold(true).Render(
+			fmt.Sprintf("Post %s to %s on %s? y/n", what, m.target, m.selLabel(c))))
+	case c.posting:
+		body = append(body, "", dim.Render("Posting to GitHub…"))
+	case c.postNote != "":
+		st := dim
+		if c.postErr {
+			st = lipgloss.NewStyle().Foreground(t.DelFg)
+		}
+		body = append(body, "")
+		body = append(body, strings.Split(wrap.Inherit(st).Render(c.postNote), "\n")...)
+	}
 	if m.consent {
 		body = append(body, "", lipgloss.NewStyle().Bold(true).Render(
 			fmt.Sprintf("Let Claude read %s (read-only: Read, Grep, Glob)? y/n", m.repo)))
@@ -420,6 +460,8 @@ func (m *model) chatView() []string {
 
 func (m *model) chatHints() string {
 	switch {
+	case m.confirmPost:
+		return "y post · any other key cancels"
 	case m.consent:
 		return "y let Claude read the repo · n diff only · esc cancel"
 	case m.typing:
@@ -431,7 +473,11 @@ func (m *model) chatHints() string {
 	if m.raw {
 		view = "m formatted"
 	}
-	return "a ask a follow-up · ↑↓ scroll · " + view + " · esc close"
+	post := ""
+	if m.canPost() {
+		post = "P post to PR · "
+	}
+	return "a ask a follow-up · ↑↓ scroll · " + view + " · " + post + "esc close"
 }
 
 // markdown renders an answer, caching it until the width or theme changes.
