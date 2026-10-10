@@ -39,9 +39,30 @@ type answerMsg struct {
 	err     bool
 }
 
+// target is what the diff is of, when known: from --pr/-R, or from gh-dash
+// through GHDIFF_REPO, GHDIFF_PR, GHDIFF_COMMIT and GHDIFF_REPO_PATH.
+type target struct {
+	repo     string // owner/name
+	pr       int
+	commit   string
+	repoPath string // local clone, from gh-dash's repoPaths
+}
+
+func (t target) String() string {
+	s := t.repo
+	if t.pr > 0 {
+		s += fmt.Sprintf("#%d", t.pr)
+	}
+	if t.commit != "" {
+		s += " @ " + t.commit[:min(7, len(t.commit))]
+	}
+	return s
+}
+
 // chatState is the model's part for asking: the open conversation, the
 // question being typed, and whether Claude may read the local repo.
 type chatState struct {
+	target   target
 	raw      []byte            // the diff as read, for context
 	convos   map[string]*convo // by selection, so reopening one resumes it
 	chat     *convo            // open in the bottom pane
@@ -53,23 +74,47 @@ type chatState struct {
 	pendingQ string // the question held while asking for consent
 }
 
-// findRepo returns the top of the git repo around the working directory when
-// it holds the diff's files, so Claude can read them.
-func findRepo(files []*File) string {
+// findRepo returns a local clone Claude can read: gh-dash's repoPaths entry,
+// or the git repo around the working directory. Either must hold the diff's
+// files, and the latter must have the PR's repo as a remote when it is known.
+func findRepo(files []*File, t target) string {
+	if p := t.repoPath; p != "" {
+		if strings.HasPrefix(p, "~/") {
+			if home, err := os.UserHomeDir(); err == nil {
+				p = filepath.Join(home, p[2:])
+			}
+		}
+		if hasFiles(p, files) {
+			return p
+		}
+	}
 	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		return ""
 	}
 	top := strings.TrimSpace(string(out))
+	if t.repo != "" {
+		remotes, _ := exec.Command("git", "-C", top, "remote", "-v").Output()
+		if !strings.Contains(strings.ToLower(string(remotes)), strings.ToLower(t.repo)) {
+			return ""
+		}
+	}
+	if hasFiles(top, files) {
+		return top
+	}
+	return ""
+}
+
+func hasFiles(top string, files []*File) bool {
 	for _, f := range files {
 		if f.Status == "deleted" {
 			continue
 		}
 		if _, err := os.Stat(filepath.Join(top, f.Path())); err == nil {
-			return top
+			return true
 		}
 	}
-	return ""
+	return false
 }
 
 func (m *model) chatHeight() int {
@@ -244,8 +289,12 @@ func (m *model) firstPrompt(c *convo, q string) string {
 	b.WriteString("You are helping someone review a code diff in a terminal diff viewer. " +
 		"They selected some lines and have a question about them. Answer concisely in plain text " +
 		"for an 80-column terminal: short paragraphs or lists, no headings or tables; short code snippets are fine.\n")
+	if t := m.target.String(); t != "" {
+		fmt.Fprintf(&b, "The diff is of %s on GitHub.\n", t)
+	}
 	if m.repoOK == 1 {
-		b.WriteString("The working directory is the repository the diff applies to; you may read files there for context.\n")
+		b.WriteString("The working directory is a clone of the repository the diff applies to; you may read files there " +
+			"for context. It may not be checked out at the diff's commit, so trust the diff where they differ.\n")
 	} else {
 		b.WriteString("You only have the diff below; you cannot read other files.\n")
 	}

@@ -32,8 +32,9 @@ Claude login; no API key). The answer opens in a pane under the diff: `a` asks a
 follow-up in the same Claude session, `↑↓` scroll, `Esc` closes. Reopening the
 same selection picks the conversation up again.
 
-Claude gets the selected lines, their hunk and the whole diff. When ghdiff runs
-inside a clone that has the diff's files, the first question asks whether
+Claude gets the selected lines, their hunk and the whole diff. When there is a
+local clone with the diff's files (gh-dash's `repoPaths`, or the repo ghdiff
+runs in, if its remote is the PR's repo), the first question asks whether
 Claude may read that repo; yes gives it Read, Grep and Glob there and nothing
 else, no gives it no tools at all.
 
@@ -46,7 +47,8 @@ pager:
 
 `d` on a PR then opens the whole PR diff, and `Enter` on a commit (Commits tab,
 `navigation: arrows`) opens that commit. gh-dash sets `GHDIFF_TITLE` for the
-title bar.
+title bar, and `GHDIFF_REPO`, `GHDIFF_PR`, `GHDIFF_COMMIT` and `GHDIFF_REPO_PATH`
+(its `repoPaths` entry) so Ask Claude knows the PR and can read the local clone.
 
 ## As git's diff pager
 

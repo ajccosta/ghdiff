@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -48,6 +49,10 @@ func main() {
 	title := os.Getenv("GHDIFF_TITLE")
 	repo := ""
 	var input []byte
+	// From gh-dash: which PR this is, and where it is cloned.
+	tgt := target{repo: os.Getenv("GHDIFF_REPO"), commit: os.Getenv("GHDIFF_COMMIT"),
+		repoPath: os.Getenv("GHDIFF_REPO_PATH")}
+	tgt.pr, _ = strconv.Atoi(os.Getenv("GHDIFF_PR"))
 
 	// Flags that may appear anywhere before the mode.
 	for len(args) >= 2 && (args[0] == "--title" || args[0] == "-R") {
@@ -83,12 +88,14 @@ func main() {
 			ghArgs = append(ghArgs, "-R", repo)
 		}
 		input = run("gh", append(ghArgs, rest...)...)
+		tgt.pr, _ = strconv.Atoi(args[1])
 		if title == "" {
 			title = strings.TrimSpace(repo + "#" + args[1])
 		}
 	case len(args) >= 2 && args[0] == "--commit":
 		takeRepo(args[2:])
 		sha := args[1]
+		tgt.commit = sha
 		if repo != "" {
 			input = run("gh", "api", "-H", "Accept: application/vnd.github.diff",
 				fmt.Sprintf("repos/%s/commits/%s", repo, sha))
@@ -119,6 +126,9 @@ func main() {
 		usage()
 	}
 
+	if repo != "" {
+		tgt.repo = repo
+	}
 	if title == "" {
 		if wd, err := os.Getwd(); err == nil {
 			title = filepath.Base(wd) // e.g. as git's pager: the repo's folder
@@ -133,7 +143,7 @@ func main() {
 		return
 	}
 	// With stdin used for the diff, bubbletea reads keys from the terminal.
-	p := tea.NewProgram(newModel(files, title, input))
+	p := tea.NewProgram(newModel(files, title, input, tgt))
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "ghdiff:", err)
 		os.Exit(1)
