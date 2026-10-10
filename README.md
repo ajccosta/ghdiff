@@ -23,6 +23,18 @@ Keys: `↑↓`/`jk` scroll · `space`/`b` page · `n`/`p` next/previous file ·
 `v` shows a line cursor: move it with `↑↓`, press `v` again to start selecting,
 then `↑↓` extend the selection (within one hunk). `Esc` cancels at any point.
 
+## Ask Claude about a selection
+
+With lines selected, `a` asks Claude Code about them (`claude -p`, your normal
+Claude login; no API key). The answer opens in a pane under the diff: `a` asks a
+follow-up in the same Claude session, `↑↓` scroll, `Esc` closes. Reopening the
+same selection picks the conversation up again.
+
+Claude gets the selected lines, their hunk and the whole diff. When ghdiff runs
+inside a clone that has the diff's files, the first question asks whether
+Claude may read that repo; yes gives it Read, Grep and Glob there and nothing
+else, no gives it no tools at all.
+
 ## With gh-dash
 
 ```yaml

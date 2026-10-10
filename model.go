@@ -37,10 +37,12 @@ type model struct {
 	off    int // first diff row on screen
 
 	sel selection
+	chatState
 }
 
-func newModel(files []*File, title string) *model {
+func newModel(files []*File, title string, raw []byte) *model {
 	m := &model{
+		chatState: chatState{raw: raw, convos: map[string]*convo{}, repo: findRepo(files)},
 		files:     files,
 		title:     title,
 		collapsed: map[int]bool{},
@@ -69,7 +71,7 @@ func (m *model) diffWidth() int {
 	return m.width
 }
 
-func (m *model) paneHeight() int { return max(1, m.height-2) }
+func (m *model) paneHeight() int { return max(1, m.height-2-m.chatHeight()) }
 
 func (m *model) relayout() {
 	if m.width == 0 {
@@ -162,7 +164,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.jumpTo(m.treeSel)
 			}
 		}
+	case answerMsg:
+		m.gotAnswer(msg)
+	case tea.PasteMsg:
+		if m.chat != nil && m.typing {
+			m.input = append(m.input, []rune(strings.ReplaceAll(msg.Content, "\n", " "))...)
+		}
 	case tea.KeyPressMsg:
+		if m.chat != nil {
+			return m, m.chatKey(msg)
+		}
 		return m, m.key(msg.String())
 	}
 	return m, nil
@@ -358,17 +369,25 @@ func (m *model) View() tea.View {
 	} else {
 		lines = diff
 	}
+	if m.chat != nil {
+		lines = append(lines, m.chatView()...)
+	}
 
 	// Footer.
 	hints := "↑↓ scroll · v select · n/p next/prev file · ← tree · c collapse · t tree · q quit"
-	if m.sel.on && !m.sel.anchored {
+	if m.chat != nil {
+		hints = m.chatHints()
+	} else if m.sel.on && !m.sel.anchored {
 		hints = "move to the first line with ↑↓, then press v to start selecting · esc cancel"
 	} else if m.sel.on {
-		hints = fmt.Sprintf("%d %s selected · ↑↓ extend · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
+		hints = fmt.Sprintf("%d %s selected · ↑↓ extend · a ask Claude · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
 	} else if m.focus == focusTree {
 		hints = "↑↓ pick file · enter/→ open · c collapse · tab diff · q quit"
 	}
 	foot := lipgloss.NewStyle().Foreground(t.Dim).Render(ansi.Truncate(" "+hints, m.width, "…"))
+	if m.chat != nil && m.typing {
+		foot = m.inputLine()
+	}
 
 	v.Content = top + "\n" + strings.Join(lines, "\n") + "\n" + foot
 	return v

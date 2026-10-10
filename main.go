@@ -133,7 +133,7 @@ func main() {
 		return
 	}
 	// With stdin used for the diff, bubbletea reads keys from the terminal.
-	p := tea.NewProgram(newModel(files, title))
+	p := tea.NewProgram(newModel(files, title, input))
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "ghdiff:", err)
 		os.Exit(1)

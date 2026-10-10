@@ -97,7 +97,11 @@ func (m *model) moveCursor(d int) {
 			}
 		}
 	}
-	// Keep the cursor's rows on screen, clear of the sticky header.
+	m.showCursor()
+}
+
+// showCursor keeps the cursor's rows on screen, clear of the sticky header.
+func (m *model) showCursor() {
 	if top := m.firstRow(m.sel.file, m.sel.cursor); top >= 0 && top < m.off+1 {
 		m.off = top - 1
 	}
@@ -118,6 +122,10 @@ func (m *model) selectKey(k string) bool {
 		m.moveCursor(-1)
 	case "down", "j":
 		m.moveCursor(1)
+	case "a":
+		if m.sel.anchored {
+			m.openChat()
+		}
 	default:
 		return false
 	}
