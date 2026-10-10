@@ -1,6 +1,11 @@
 package main
 
 import (
+	"fmt"
+	"os/exec"
+	"strings"
+
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -112,7 +117,7 @@ func (m *model) showCursor() {
 }
 
 // selectKey handles keys while a selection is open; false means not handled.
-func (m *model) selectKey(k string) bool {
+func (m *model) selectKey(k string) (bool, tea.Cmd) {
 	switch k {
 	case "esc":
 		m.sel.on = false
@@ -126,10 +131,44 @@ func (m *model) selectKey(k string) bool {
 		if m.sel.anchored {
 			m.openChat()
 		}
+	case "y":
+		if m.sel.anchored {
+			return true, m.copySelection()
+		}
 	default:
-		return false
+		return false, nil
 	}
-	return true
+	return true, nil
+}
+
+// copySelection puts the selected lines on the clipboard: plain code when
+// they are all on one side of the change, a diff with +/- when they mix.
+func (m *model) copySelection() tea.Cmd {
+	lo, hi := m.sel.bounds()
+	lines := m.files[m.sel.file].Lines[lo : hi+1]
+	adds, dels := false, false
+	for _, l := range lines {
+		adds = adds || l.Kind == Add
+		dels = dels || l.Kind == Del
+	}
+	var b strings.Builder
+	for _, l := range lines {
+		if !selectable(l) {
+			continue
+		}
+		if adds && dels {
+			b.WriteString(map[LineKind]string{Add: "+", Del: "-", Ctx: " "}[l.Kind])
+		}
+		b.WriteString(l.Raw + "\n")
+	}
+	n := m.selectedCount()
+	m.flash = fmt.Sprintf("copied %d %s", n, plural(n, "line", "lines"))
+	cmd := exec.Command("pbcopy")
+	cmd.Stdin = strings.NewReader(b.String())
+	if cmd.Run() == nil {
+		return nil
+	}
+	return tea.SetClipboard(b.String()) // OSC 52, where there is no pbcopy
 }
 
 // markSelected replaces the first cell of a selected row with a bar.

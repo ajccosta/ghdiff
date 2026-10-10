@@ -25,6 +25,7 @@ type Line struct {
 	Kind     LineKind
 	Old, New int // line numbers, 0 when the side has none
 	Text     string
+	Raw      string // Text before tabs were expanded, for copying
 	Spans    []Span
 }
 
@@ -121,17 +122,17 @@ func Parse(r io.Reader) []*File {
 		if inHunk && line != "" {
 			switch line[0] {
 			case ' ':
-				f.Lines = append(f.Lines, Line{Kind: Ctx, Old: oldNo, New: newNo, Text: expandTabs(line[1:])})
+				f.Lines = append(f.Lines, Line{Kind: Ctx, Old: oldNo, New: newNo, Text: expandTabs(line[1:]), Raw: line[1:]})
 				oldNo++
 				newNo++
 				continue
 			case '+':
-				f.Lines = append(f.Lines, Line{Kind: Add, New: newNo, Text: expandTabs(line[1:])})
+				f.Lines = append(f.Lines, Line{Kind: Add, New: newNo, Text: expandTabs(line[1:]), Raw: line[1:]})
 				newNo++
 				f.Adds++
 				continue
 			case '-':
-				f.Lines = append(f.Lines, Line{Kind: Del, Old: oldNo, Text: expandTabs(line[1:])})
+				f.Lines = append(f.Lines, Line{Kind: Del, Old: oldNo, Text: expandTabs(line[1:]), Raw: line[1:]})
 				oldNo++
 				f.Dels++
 				continue

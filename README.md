@@ -22,6 +22,8 @@ Keys: `↑↓`/`jk` scroll · `space`/`b` page · `n`/`p` next/previous file ·
 
 `v` shows a line cursor: move it with `↑↓`, press `v` again to start selecting,
 then `↑↓` extend the selection (within one hunk). `Esc` cancels at any point.
+`y` copies the selected lines (with `+`/`-` when they mix removed and added
+lines).
 
 ## Ask Claude about a selection
 

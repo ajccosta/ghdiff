@@ -36,7 +36,8 @@ type model struct {
 	tree   []treeRow
 	off    int // first diff row on screen
 
-	sel selection
+	sel   selection
+	flash string // a one-off note for the footer, cleared by the next key
 	chatState
 }
 
@@ -186,8 +187,11 @@ func (m *model) moveTree(d int) {
 
 func (m *model) key(k string) tea.Cmd {
 	page := m.paneHeight()
-	if m.sel.on && m.focus == focusDiff && m.selectKey(k) {
-		return nil
+	m.flash = ""
+	if m.sel.on && m.focus == focusDiff {
+		if ok, cmd := m.selectKey(k); ok {
+			return cmd
+		}
 	}
 	switch k {
 	case "q", "esc", "ctrl+c":
@@ -380,11 +384,14 @@ func (m *model) View() tea.View {
 	} else if m.sel.on && !m.sel.anchored {
 		hints = "move to the first line with ↑↓, then press v to start selecting · esc cancel"
 	} else if m.sel.on {
-		hints = fmt.Sprintf("%d %s selected · ↑↓ extend · a ask Claude · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
+		hints = fmt.Sprintf("%d %s selected · ↑↓ extend · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
 	} else if m.focus == focusTree {
 		hints = "↑↓ pick file · enter/→ open · c collapse · tab diff · q quit"
 	}
 	foot := lipgloss.NewStyle().Foreground(t.Dim).Render(ansi.Truncate(" "+hints, m.width, "…"))
+	if m.flash != "" {
+		foot = lipgloss.NewStyle().Foreground(t.Accent).Render(" " + m.flash)
+	}
 	if m.chat != nil && m.typing {
 		foot = m.inputLine()
 	}
