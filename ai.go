@@ -79,7 +79,7 @@ type chatState struct {
 	convos      map[string]*convo // by selection, so reopening one resumes it
 	chat        *convo            // open in the bottom pane
 	typing      bool
-	input       []rune
+	input       lineInput
 	raw         bool   // show answers as Claude wrote them, not rendered
 	repo        string // local clone holding the diff's files, "" if none
 	repoOK      int    // 0 not asked yet, 1 yes, -1 no
@@ -147,7 +147,8 @@ func (m *model) openChat() {
 		c = &convo{file: m.sel.file, lo: lo, hi: hi}
 		m.convos[k] = c
 	}
-	m.chat, m.typing, m.input = c, true, nil
+	m.chat, m.typing = c, true
+	m.input.reset()
 	m.clamp()
 	m.showCursor()
 }
@@ -183,8 +184,9 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 	case m.typing:
 		switch k {
 		case "enter":
-			q := strings.TrimSpace(string(m.input))
-			m.typing, m.input = false, nil
+			q := strings.TrimSpace(m.input.String())
+			m.typing = false
+			m.input.reset()
 			if q != "" {
 				return m.ask(q)
 			}
@@ -192,20 +194,15 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 				m.closeChat()
 			}
 		case "esc":
-			m.typing, m.input = false, nil
+			m.typing = false
+			m.input.reset()
 			if len(m.chat.turns) == 0 {
 				m.closeChat()
 			}
-		case "backspace":
-			if n := len(m.input); n > 0 {
-				m.input = m.input[:n-1]
-			}
-		case "ctrl+u":
-			m.input = nil
 		case "ctrl+c":
 			return tea.Quit
 		default:
-			m.input = append(m.input, []rune(msg.Key().Text)...)
+			m.input.key(k, msg.Key().Text)
 		}
 	default:
 		switch k {
@@ -501,10 +498,5 @@ func (m *model) markdown(tn *turn, w int) string {
 
 func (m *model) inputLine() string {
 	label := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Accent).Render(" Ask Claude: ")
-	text := string(m.input)
-	room := max(1, m.width-ansi.StringWidth(label)-2)
-	if w := ansi.StringWidth(text); w > room {
-		text = ansi.TruncateLeft(text, w-room, "…")
-	}
-	return label + text + lipgloss.NewStyle().Reverse(true).Render(" ")
+	return label + m.input.view(max(1, m.width-ansi.StringWidth(label)-1))
 }

@@ -171,7 +171,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.gotPosted(msg)
 	case tea.PasteMsg:
 		if m.chat != nil && m.typing {
-			m.input = append(m.input, []rune(strings.ReplaceAll(msg.Content, "\n", " "))...)
+			m.input.insert(strings.ReplaceAll(msg.Content, "\n", " "))
 		}
 	case tea.KeyPressMsg:
 		if m.chat != nil {

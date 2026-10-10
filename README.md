@@ -32,6 +32,11 @@ Claude login; no API key). The answer opens in a pane under the diff: `a` asks a
 follow-up in the same Claude session, `↑↓` scroll, `m` switches between
 formatted Markdown and Claude's raw text, `Esc` closes.
 
+The question prompt has the usual terminal editing keys: `Ctrl+A`/`Ctrl+E`
+(start/end), `←→`, `Option+←→` or `Alt+B`/`Alt+F` (by word), `Ctrl+W` and
+`Option+Backspace` (delete word), `Alt+D` (delete next word), `Ctrl+U`/`Ctrl+K`
+(delete to start/end), `Delete`/`Ctrl+D`.
+
 `P` posts the conversation to the PR (after a y/n) as a review comment on the
 selected lines, at the PR's head commit (or the commit being viewed). Posting
 again after more follow-ups replies in the same thread with just the new
