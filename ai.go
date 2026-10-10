@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -21,6 +22,10 @@ import (
 type turn struct {
 	q, a string
 	err  bool
+
+	md     string // a rendered as markdown, for mdW columns and mdDark
+	mdW    int
+	mdDark bool
 }
 
 type convo struct {
@@ -63,11 +68,12 @@ func (t target) String() string {
 // question being typed, and whether Claude may read the local repo.
 type chatState struct {
 	target   target
-	raw      []byte            // the diff as read, for context
+	diff     []byte            // the diff as read, for context
 	convos   map[string]*convo // by selection, so reopening one resumes it
 	chat     *convo            // open in the bottom pane
 	typing   bool
 	input    []rune
+	raw      bool   // show answers as Claude wrote them, not rendered
 	repo     string // local clone holding the diff's files, "" if none
 	repoOK   int    // 0 not asked yet, 1 yes, -1 no
 	consent  bool   // waiting for y/n on reading repo
@@ -195,6 +201,8 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 			}
 		case "esc":
 			m.closeChat()
+		case "m":
+			m.raw = !m.raw
 		case "q", "ctrl+c":
 			return tea.Quit
 		case "up", "k":
@@ -275,7 +283,9 @@ func (m *model) gotAnswer(msg answerMsg) {
 		c.session = msg.session
 	}
 	if n := len(c.turns); n > 0 {
-		c.turns[n-1].a, c.turns[n-1].err = strings.TrimSpace(msg.text), msg.err
+		// Tabs would be dropped when drawn; Go code is all tabs.
+		text := strings.ReplaceAll(strings.TrimSpace(msg.text), "\t", "    ")
+		c.turns[n-1].a, c.turns[n-1].err = text, msg.err
 	}
 	// Show the new answer from its question.
 	c.scroll = -1
@@ -287,8 +297,9 @@ func (m *model) firstPrompt(c *convo, q string) string {
 	f := m.files[c.file]
 	var b strings.Builder
 	b.WriteString("You are helping someone review a code diff in a terminal diff viewer. " +
-		"They selected some lines and have a question about them. Answer concisely in plain text " +
-		"for an 80-column terminal: short paragraphs or lists, no headings or tables; short code snippets are fine.\n")
+		"They selected some lines and have a question about them. Answer concisely; your Markdown is rendered " +
+		"in a terminal pane about 100 columns wide, so prefer short paragraphs, lists and code blocks over " +
+		"headings and wide tables.\n")
 	if t := m.target.String(); t != "" {
 		fmt.Fprintf(&b, "The diff is of %s on GitHub.\n", t)
 	}
@@ -314,7 +325,7 @@ func (m *model) firstPrompt(c *convo, q string) string {
 		fmt.Fprintf(&b, "%5s %5s %s%s\n", lineNo(l.Old), lineNo(l.New), mark, l.Text)
 	}
 	fmt.Fprintf(&b, "\nQuestion: %s\n", q)
-	diff := ansiRe.ReplaceAll(m.raw, nil)
+	diff := ansiRe.ReplaceAll(m.diff, nil)
 	if len(diff) > maxDiffContext {
 		b.WriteString("\n(The full diff is too large to include.)\n")
 	} else {
@@ -380,8 +391,10 @@ func (m *model) chatView() []string {
 			body = append(body, dim.Render("Claude is thinking… (esc closes)"))
 		case tn.err:
 			body = append(body, strings.Split(wrap.Foreground(t.DelFg).Render("Error: "+tn.a), "\n")...)
-		default:
+		case m.raw:
 			body = append(body, strings.Split(wrap.Render(tn.a), "\n")...)
+		default:
+			body = append(body, strings.Split(m.markdown(&c.turns[i], w-2), "\n")...)
 		}
 	}
 	if m.consent {
@@ -414,7 +427,30 @@ func (m *model) chatHints() string {
 	case m.chat.busy:
 		return "↑↓ scroll · esc close (stops Claude)"
 	}
-	return "a ask a follow-up · ↑↓ scroll · esc close"
+	view := "m raw text"
+	if m.raw {
+		view = "m formatted"
+	}
+	return "a ask a follow-up · ↑↓ scroll · " + view + " · esc close"
+}
+
+// markdown renders an answer, caching it until the width or theme changes.
+func (m *model) markdown(tn *turn, w int) string {
+	if tn.md != "" && tn.mdW == w && tn.mdDark == m.dark {
+		return tn.md
+	}
+	style := "light"
+	if m.dark {
+		style = "dark"
+	}
+	out := tn.a
+	if r, err := glamour.NewTermRenderer(glamour.WithStandardStyle(style), glamour.WithWordWrap(w)); err == nil {
+		if s, err := r.Render(tn.a); err == nil {
+			out = strings.Trim(s, "\n")
+		}
+	}
+	tn.md, tn.mdW, tn.mdDark = out, w, m.dark
+	return out
 }
 
 func (m *model) inputLine() string {

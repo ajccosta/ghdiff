@@ -43,7 +43,7 @@ type model struct {
 
 func newModel(files []*File, title string, raw []byte, t target) *model {
 	m := &model{
-		chatState: chatState{target: t, raw: raw, convos: map[string]*convo{}, repo: findRepo(files, t)},
+		chatState: chatState{target: t, diff: raw, convos: map[string]*convo{}, repo: findRepo(files, t)},
 		files:     files,
 		title:     title,
 		collapsed: map[int]bool{},

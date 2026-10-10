@@ -29,7 +29,8 @@ lines).
 
 With lines selected, `a` asks Claude Code about them (`claude -p`, your normal
 Claude login; no API key). The answer opens in a pane under the diff: `a` asks a
-follow-up in the same Claude session, `↑↓` scroll, `Esc` closes. Reopening the
+follow-up in the same Claude session, `↑↓` scroll, `m` switches between
+formatted Markdown and Claude's raw text, `Esc` closes. Reopening the
 same selection picks the conversation up again.
 
 Claude gets the selected lines, their hunk and the whole diff. When there is a
