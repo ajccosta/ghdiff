@@ -63,6 +63,7 @@ func themeFor(dark, truecolor bool) Theme {
 // row is one screen line of the diff pane.
 type row struct {
 	file   int
+	line   int // index into File.Lines, -1 for headers and spacers
 	header bool
 	text   string
 }
@@ -132,17 +133,18 @@ func buildRows(t Theme, files []*File, collapsed map[int]bool, width int) ([]row
 	starts := make([]int, len(files))
 	for fi, f := range files {
 		starts[fi] = len(rows)
-		rows = append(rows, row{file: fi, header: true, text: fileHeader(t, f, collapsed[fi], width)})
+		rows = append(rows, row{file: fi, line: -1, header: true, text: fileHeader(t, f, collapsed[fi], width)})
 		if collapsed[fi] {
-			rows = append(rows, row{file: fi})
+			rows = append(rows, row{file: fi, line: -1})
 			continue
 		}
-		for _, l := range f.Lines {
-			for _, text := range renderLine(t, l, nw, cw, width) {
-				rows = append(rows, row{file: fi, text: text})
+		for li, l := range f.Lines {
+			// One spare column on the left for the selection bar.
+			for _, text := range renderLine(t, l, nw, cw-1, width-1) {
+				rows = append(rows, row{file: fi, line: li, text: " " + text})
 			}
 		}
-		rows = append(rows, row{file: fi})
+		rows = append(rows, row{file: fi, line: -1})
 	}
 	return rows, starts
 }

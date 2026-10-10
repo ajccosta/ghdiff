@@ -35,6 +35,8 @@ type model struct {
 	starts []int
 	tree   []treeRow
 	off    int // first diff row on screen
+
+	sel selection
 }
 
 func newModel(files []*File, title string) *model {
@@ -79,6 +81,9 @@ func (m *model) relayout() {
 		into = m.off - m.starts[cur]
 	}
 	m.rows, m.starts = buildRows(m.theme, m.files, m.collapsed, m.diffWidth())
+	if m.sel.on && m.collapsed[m.sel.file] {
+		m.sel.on = false
+	}
 	if len(m.starts) > 0 {
 		m.off = m.starts[cur] + max(0, into)
 	}
@@ -170,6 +175,9 @@ func (m *model) moveTree(d int) {
 
 func (m *model) key(k string) tea.Cmd {
 	page := m.paneHeight()
+	if m.sel.on && m.focus == focusDiff && m.selectKey(k) {
+		return nil
+	}
 	switch k {
 	case "q", "esc", "ctrl+c":
 		return tea.Quit
@@ -254,6 +262,8 @@ func (m *model) key(k string) tea.Cmd {
 		m.scroll(-len(m.rows))
 	case "end", "G":
 		m.scroll(len(m.rows))
+	case "v":
+		m.startCursor()
 	case "left", "h":
 		if m.treeWidth() > 0 {
 			m.focus, m.treeSel = focusTree, m.currentFile()
@@ -317,7 +327,7 @@ func (m *model) View() tea.View {
 	diff := make([]string, h)
 	for i := 0; i < h; i++ {
 		if r := m.off + i; r < len(m.rows) {
-			diff[i] = m.rows[r].text
+			diff[i] = m.markSelected(m.rows[r], m.rows[r].text)
 		}
 	}
 	if len(m.starts) > 0 {
@@ -350,8 +360,12 @@ func (m *model) View() tea.View {
 	}
 
 	// Footer.
-	hints := "↑↓ scroll · n/p next/prev file · ← tree · c collapse · t tree · q quit"
-	if m.focus == focusTree {
+	hints := "↑↓ scroll · v select · n/p next/prev file · ← tree · c collapse · t tree · q quit"
+	if m.sel.on && !m.sel.anchored {
+		hints = "move to the first line with ↑↓, then press v to start selecting · esc cancel"
+	} else if m.sel.on {
+		hints = fmt.Sprintf("%d %s selected · ↑↓ extend · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
+	} else if m.focus == focusTree {
 		hints = "↑↓ pick file · enter/→ open · c collapse · tab diff · q quit"
 	}
 	foot := lipgloss.NewStyle().Foreground(t.Dim).Render(ansi.Truncate(" "+hints, m.width, "…"))
