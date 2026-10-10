@@ -43,7 +43,7 @@ type model struct {
 
 func newModel(files []*File, title string, raw []byte, t target) *model {
 	m := &model{
-		chatState: chatState{target: t, diff: raw, convos: map[string]*convo{}, repo: findRepo(files, t)},
+		chatState: chatState{target: t, diff: raw, repo: findRepo(files, t)},
 		files:     files,
 		title:     title,
 		collapsed: map[int]bool{},
@@ -53,6 +53,7 @@ func newModel(files []*File, title string, raw []byte, t target) *model {
 		tree:      buildTree(files),
 	}
 	m.theme = themeFor(m.dark, m.truecolor)
+	m.loadConvos()
 	return m
 }
 
@@ -344,7 +345,7 @@ func (m *model) View() tea.View {
 	diff := make([]string, h)
 	for i := 0; i < h; i++ {
 		if r := m.off + i; r < len(m.rows) {
-			diff[i] = m.markSelected(m.rows[r], m.rows[r].text)
+			diff[i] = m.markSelected(r)
 		}
 	}
 	if len(m.starts) > 0 {
@@ -385,6 +386,9 @@ func (m *model) View() tea.View {
 		hints = m.chatHints()
 	} else if m.sel.on && !m.sel.anchored {
 		hints = "move to the first line with ↑↓, then press v to start selecting · esc cancel"
+		if n := len(m.convosAt(m.sel.file, m.sel.cursor)); n > 0 {
+			hints = fmt.Sprintf("%d Claude %s here · o open · ", n, plural(n, "conversation", "conversations")) + hints
+		}
 	} else if m.sel.on {
 		hints = fmt.Sprintf("%d %s selected · ↑↓ extend · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
 	} else if m.focus == focusTree {

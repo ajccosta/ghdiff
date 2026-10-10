@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
@@ -35,6 +36,9 @@ type convo struct {
 	busy         bool
 	scroll       int
 	cancel       context.CancelFunc
+	created      time.Time
+	dir          string // where claude runs; a resumed session must run there too
+	readRepo     bool   // Claude may read the local clone (dir)
 
 	// Posting to the PR (post.go).
 	commentID int64 // the thread's first comment, once posted
@@ -75,9 +79,12 @@ func (t target) String() string {
 // question being typed, and whether Claude may read the local repo.
 type chatState struct {
 	target      target
-	diff        []byte            // the diff as read, for context
-	convos      map[string]*convo // by selection, so reopening one resumes it
-	chat        *convo            // open in the bottom pane
+	diff        []byte       // the diff as read, for context
+	convos      []*convo     // every conversation on this diff, oldest first
+	here        []*convo     // the ones on the open conversation's lines, for < >
+	unplaced    []savedConvo // saved ones whose lines are not in this diff
+	store       string       // the file they are saved in (store.go)
+	chat        *convo       // open in the bottom pane
 	typing      bool
 	input       lineInput
 	raw         bool   // show answers as Claude wrote them, not rendered
@@ -138,28 +145,71 @@ func (m *model) chatHeight() int {
 	return max(6, (m.height-2)*2/5)
 }
 
-// openChat starts (or reopens) the conversation for the current selection.
-func (m *model) openChat() {
-	lo, hi := m.sel.bounds()
-	k := fmt.Sprintf("%d:%d:%d", m.sel.file, lo, hi)
-	c := m.convos[k]
-	if c == nil {
-		c = &convo{file: m.sel.file, lo: lo, hi: hi}
-		m.convos[k] = c
+// newChat starts a conversation on the given lines, keeping any earlier ones.
+func (m *model) newChat(fi, lo, hi int) {
+	c := &convo{file: fi, lo: lo, hi: hi, created: time.Now()}
+	m.convos = append(m.convos, c)
+	m.here = nil
+	for _, o := range m.convos {
+		if o.file == fi && o.lo == lo && o.hi == hi && (len(o.turns) > 0 || o == c) {
+			m.here = append(m.here, o)
+		}
 	}
-	m.chat, m.typing = c, true
+	m.showChat(c)
+	m.typing = true
 	m.input.reset()
+}
+
+// openChats opens the newest of the conversations on a line; < > switch.
+func (m *model) openChats(cs []*convo) {
+	m.here = cs
+	m.showChat(cs[len(cs)-1])
+	m.chat.scroll = 0
+}
+
+// showChat puts a conversation in the pane and selects its lines.
+func (m *model) showChat(c *convo) {
+	m.chat = c
+	m.sel = selection{on: true, anchored: true, file: c.file, anchor: c.lo, cursor: c.hi}
 	m.clamp()
 	m.showCursor()
 }
 
 func (m *model) closeChat() {
-	if m.chat != nil && m.chat.cancel != nil {
-		m.chat.cancel()
+	if c := m.chat; c != nil {
+		if c.cancel != nil {
+			c.cancel()
+		}
+		if len(c.turns) == 0 {
+			m.dropConvo(c)
+		}
 	}
-	m.chat, m.typing, m.consent = nil, false, false
+	m.chat, m.here, m.typing, m.consent = nil, nil, false, false
 	m.sel.on = false
 	m.clamp()
+}
+
+func (m *model) dropConvo(c *convo) {
+	for i, o := range m.convos {
+		if o == c {
+			m.convos = append(m.convos[:i], m.convos[i+1:]...)
+			return
+		}
+	}
+}
+
+// switchChat moves to the previous (-1) or next (1) conversation on these lines.
+func (m *model) switchChat(d int) {
+	for i, c := range m.here {
+		if c == m.chat && i+d >= 0 && i+d < len(m.here) {
+			if len(m.chat.turns) == 0 {
+				return
+			}
+			m.showChat(m.here[i+d])
+			m.chat.scroll = 0
+			return
+		}
+	}
 }
 
 // chatKey handles keys while the conversation pane is open.
@@ -197,7 +247,13 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 			m.typing = false
 			m.input.reset()
 			if len(m.chat.turns) == 0 {
-				m.closeChat()
+				m.dropConvo(m.chat)
+				if len(m.here) > 1 {
+					m.here = m.here[:len(m.here)-1]
+					m.showChat(m.here[len(m.here)-1])
+				} else {
+					m.closeChat()
+				}
 			}
 		case "ctrl+c":
 			return tea.Quit
@@ -214,6 +270,14 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 			m.closeChat()
 		case "m":
 			m.raw = !m.raw
+		case "N":
+			if !m.chat.busy {
+				m.newChat(m.chat.file, m.chat.lo, m.chat.hi)
+			}
+		case "<", ",":
+			m.switchChat(-1)
+		case ">", ".":
+			m.switchChat(1)
 		case "P":
 			switch {
 			case m.target.repo == "" || m.target.pr == 0:
@@ -243,7 +307,7 @@ func (m *model) ask(q string) tea.Cmd {
 	if c == nil || c.busy {
 		return nil
 	}
-	if m.repo != "" && m.repoOK == 0 {
+	if m.repo != "" && m.repoOK == 0 && c.session == "" {
 		m.consent, m.pendingQ = true, q
 		return nil
 	}
@@ -251,10 +315,17 @@ func (m *model) ask(q string) tea.Cmd {
 	c.busy = true
 	c.scroll = 1 << 30 // to the end; clamped when drawn
 
+	// A new conversation takes the repo answer; a resumed one keeps its own.
+	if c.session == "" {
+		c.readRepo = m.repoOK == 1
+		c.dir = filepath.Join(os.TempDir(), "ghdiff-claude")
+		if c.readRepo {
+			c.dir = m.repo
+		}
+	}
+	dir := c.dir
 	args := []string{"-p", "--output-format", "json", "--strict-mcp-config"}
-	dir := filepath.Join(os.TempDir(), "ghdiff-claude")
-	if m.repoOK == 1 {
-		dir = m.repo
+	if c.readRepo {
 		args = append(args, "--tools", "Read,Grep,Glob", "--allowedTools", "Read,Grep,Glob")
 	} else {
 		os.MkdirAll(dir, 0o755)
@@ -306,6 +377,7 @@ func (m *model) gotAnswer(msg answerMsg) {
 		text := strings.ReplaceAll(strings.TrimSpace(msg.text), "\t", "    ")
 		c.turns[n-1].a, c.turns[n-1].err = text, msg.err
 	}
+	m.saveConvos()
 	// Show the new answer from its question.
 	c.scroll = -1
 }
@@ -322,7 +394,7 @@ func (m *model) firstPrompt(c *convo, q string) string {
 	if t := m.target.String(); t != "" {
 		fmt.Fprintf(&b, "The diff is of %s on GitHub.\n", t)
 	}
-	if m.repoOK == 1 {
+	if c.readRepo {
 		b.WriteString("The working directory is a clone of the repository the diff applies to; you may read files there " +
 			"for context. It may not be checked out at the diff's commit, so trust the diff where they differ.\n")
 	} else {
@@ -386,10 +458,20 @@ func (m *model) chatView() []string {
 	dim := lipgloss.NewStyle().Foreground(t.Dim)
 
 	ctx := "diff only"
-	if m.repoOK == 1 {
+	if c.readRepo || (c.session == "" && m.repoOK == 1) {
 		ctx = "reading " + filepath.Base(m.repo)
 	}
 	title := " Claude · " + m.selLabel(c) + " · " + ctx + " "
+	if n := len(m.here); n > 1 {
+		for i, o := range m.here {
+			if o == c {
+				title += fmt.Sprintf("· conversation %d/%d ", i+1, n)
+			}
+		}
+	}
+	if !c.created.IsZero() {
+		title += "· " + c.created.Format("Jan 2 15:04") + " "
+	}
 	rule := dim.Render("──") + lipgloss.NewStyle().Bold(true).Foreground(t.Accent).Render(ansi.Truncate(title, w-4, "…"))
 	rule += dim.Render(strings.Repeat("─", max(0, w-ansi.StringWidth(rule))))
 
@@ -466,7 +548,7 @@ func (m *model) chatHints() string {
 	case m.chat.busy:
 		return "↑↓ scroll · esc close (stops Claude)"
 	}
-	view := "m raw text"
+	view := "m raw"
 	if m.raw {
 		view = "m formatted"
 	}
@@ -474,7 +556,11 @@ func (m *model) chatHints() string {
 	if m.canPost() {
 		post = "P post to PR · "
 	}
-	return "a ask a follow-up · ↑↓ scroll · " + view + " · " + post + "esc close"
+	other := ""
+	if len(m.here) > 1 {
+		other = "< > switch · "
+	}
+	return "a follow-up · N new · " + other + "↑↓ scroll · " + view + " · " + post + "esc close"
 }
 
 // markdown renders an answer, caching it until the width or theme changes.

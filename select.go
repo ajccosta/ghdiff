@@ -129,7 +129,12 @@ func (m *model) selectKey(k string) (bool, tea.Cmd) {
 		m.moveCursor(1)
 	case "a":
 		if m.sel.anchored {
-			m.openChat()
+			lo, hi := m.sel.bounds()
+			m.newChat(m.sel.file, lo, hi)
+		}
+	case "o":
+		if cs := m.convosAt(m.sel.file, m.sel.cursor); len(cs) > 0 {
+			m.openChats(cs)
 		}
 	case "y":
 		if m.sel.anchored {
@@ -171,9 +176,16 @@ func (m *model) copySelection() tea.Cmd {
 	return tea.SetClipboard(b.String()) // OSC 52, where there is no pbcopy
 }
 
-// markSelected replaces the first cell of a selected row with a bar.
-func (m *model) markSelected(r row, text string) string {
+// markSelected replaces the first cell of a selected row with a bar, and of
+// a row with a Claude conversation with its mark.
+func (m *model) markSelected(i int) string {
+	r := m.rows[i]
+	text := r.text
 	if !m.sel.has(r) {
+		if mark := m.convoMark(i); mark != "" {
+			return lipgloss.NewStyle().Foreground(m.theme.Accent).Faint(mark != "●").Render(mark) +
+				ansi.TruncateLeft(text, 1, "")
+		}
 		return text
 	}
 	bar := lipgloss.NewStyle().Foreground(m.theme.Accent)

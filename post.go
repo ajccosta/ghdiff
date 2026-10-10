@@ -146,4 +146,5 @@ func (m *model) gotPosted(msg postedMsg) {
 	c.posted = msg.turns
 	c.postNote, c.postErr = "Posted: "+msg.url, false
 	c.scroll = 1 << 30
+	m.saveConvos()
 }

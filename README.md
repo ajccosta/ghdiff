@@ -29,8 +29,16 @@ lines).
 
 With lines selected, `a` asks Claude Code about them (`claude -p`, your normal
 Claude login; no API key). The answer opens in a pane under the diff: `a` asks a
-follow-up in the same Claude session, `↑↓` scroll, `m` switches between
-formatted Markdown and Claude's raw text, `Esc` closes.
+follow-up in the same Claude session, `N` starts a new conversation on the same
+lines (the old one is kept), `<` `>` switch between the conversations there,
+`↑↓` scroll, `m` switches between formatted Markdown and Claude's raw text,
+`Esc` closes.
+
+Conversations are saved per PR (or per local repo for `git diff`) in
+`~/.local/state/ghdiff/conversations/`, so they are there the next time the diff
+is opened. Lines with a conversation get a `●` (first line) and `│` in the
+gutter; put the cursor (`v`) on one and press `o` to read or continue it. They
+follow their lines by content, so they stay put when other lines move.
 
 The question prompt has the usual terminal editing keys: `Ctrl+A`/`Ctrl+E`
 (start/end), `←→`, `Option+←→` or `Alt+B`/`Alt+F` (by word), `Ctrl+W` and
@@ -41,8 +49,7 @@ The question prompt has the usual terminal editing keys: `Ctrl+A`/`Ctrl+E`
 selected lines, at the PR's head commit (or the commit being viewed). Posting
 again after more follow-ups replies in the same thread with just the new
 questions and answers. This needs the PR: open the diff from gh-dash, or use
-`ghdiff --pr N -R owner/repo`. Reopening the
-same selection picks the conversation up again.
+`ghdiff --pr N -R owner/repo`.
 
 Claude gets the selected lines, their hunk and the whole diff. When there is a
 local clone with the diff's files (gh-dash's `repoPaths`, or the repo ghdiff
