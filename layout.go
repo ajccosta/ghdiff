@@ -114,6 +114,10 @@ func (m *model) mouseClick(msg tea.MouseClickMsg) {
 			m.jumpTo(m.treeSel)
 		}
 	default:
+		if fi := m.headerAt(mo.Y); fi >= 0 {
+			m.clickHeader(fi, mo.X)
+			return
+		}
 		r := m.diffRow(mo.Y)
 		if r < 0 || !m.codeRow(r) || m.consent || m.confirmPost {
 			return
@@ -125,6 +129,37 @@ func (m *model) mouseClick(msg tea.MouseClickMsg) {
 		m.sel = selection{on: true, anchored: true, file: m.rows[r].file, anchor: m.rows[r].line, cursor: m.rows[r].line}
 		m.drag = dragSel
 	}
+}
+
+// headerAt is the file whose header is at screen row y (the sticky one at
+// the top counts), or -1.
+func (m *model) headerAt(y int) int {
+	if y < 1 || y > m.paneHeight() || len(m.starts) == 0 {
+		return -1
+	}
+	cur := m.currentFile()
+	if y == 1 && m.off > m.starts[cur] && !m.collapsed[cur] {
+		return cur
+	}
+	if r := m.off + y - 1; r < len(m.rows) && m.rows[r].header {
+		return m.rows[r].file
+	}
+	return -1
+}
+
+// clickHeader: the arrow collapses or expands the file; anywhere else on the
+// header makes it the current file, in the diff and the tree.
+func (m *model) clickHeader(fi, x int) {
+	x0 := 0
+	if tw := m.treeWidth(); tw > 0 {
+		x0 = tw + 1
+	}
+	if x >= x0 && x <= x0+2 {
+		m.collapsed[fi] = !m.collapsed[fi]
+		m.relayout()
+	}
+	m.jumpTo(fi)
+	m.treeSel = fi
 }
 
 func (m *model) mouseMotion(msg tea.MouseMotionMsg) {

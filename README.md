@@ -20,7 +20,11 @@ Keys: `↑↓`/`jk` scroll · `space`/`b` page · `n`/`p` next/previous file ·
 `←` or `Tab` file tree (`↑↓` pick, `Enter`/`→` open) · `c` collapse file ·
 `C` collapse all · `t` hide tree · `h` or `?` help · `q` quit.
 
-Mouse: click a line to select it and drag to extend; drag the border between
+The current file's header is highlighted, like its name in the tree; `n`/`p`,
+scrolling, the tree and clicking a header all move it.
+
+Mouse: click a file header's arrow to collapse or expand it, the header to
+make it the current file; click a line to select it and drag to extend; drag the border between
 the tree and the diff, or around the Claude pane, to resize. `+`/`-` make the
 Claude pane bigger or smaller and `{`/`}` the tree narrower or wider; sizes
 are remembered.

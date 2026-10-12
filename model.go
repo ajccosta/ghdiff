@@ -398,16 +398,21 @@ func (m *model) View() tea.View {
 
 	// Diff pane, with the current file's header kept at the top.
 	diff := make([]string, h)
+	cur := m.currentFile()
+	curHeader := ""
+	if len(m.files) > 0 {
+		curHeader = fileHeader(t, m.files[cur], m.collapsed[cur], m.diffWidth(), true)
+	}
 	for i := 0; i < h; i++ {
 		if r := m.off + i; r < len(m.rows) {
 			diff[i] = m.markSelected(r)
+			if m.rows[r].header && m.rows[r].file == cur {
+				diff[i] = curHeader
+			}
 		}
 	}
-	if len(m.starts) > 0 {
-		cur := m.currentFile()
-		if m.off > m.starts[cur] && !m.collapsed[cur] {
-			diff[0] = m.rows[m.starts[cur]].text
-		}
+	if len(m.starts) > 0 && m.off > m.starts[cur] && !m.collapsed[cur] {
+		diff[0] = curHeader
 	}
 	if len(m.files) == 0 {
 		diff[0] = lipgloss.NewStyle().Foreground(t.Dim).Render("  No changes.")

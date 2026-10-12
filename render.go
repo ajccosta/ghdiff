@@ -97,7 +97,9 @@ func counts(t Theme, adds, dels int, base lipgloss.Style) string {
 		base.Foreground(t.DelFg).Render(fmt.Sprintf("−%d", dels))
 }
 
-func fileHeader(t Theme, f *File, collapsed bool, width int) string {
+// fileHeader is a file's header row; the current file's (the one the tree
+// highlights too) has its arrow and name in the accent colour.
+func fileHeader(t Theme, f *File, collapsed bool, width int, current bool) string {
 	arrow := "▾"
 	if collapsed {
 		arrow = "▸"
@@ -107,7 +109,11 @@ func fileHeader(t Theme, f *File, collapsed bool, width int) string {
 		name = f.Old + " → " + f.New
 	}
 	bg := lipgloss.NewStyle().Background(t.HeadBg)
-	left := bg.Render(" "+arrow+" ") + statusMark(t, f.Status, bg) + bg.Bold(true).Render(" "+name+" ")
+	hl := bg
+	if current {
+		hl = bg.Foreground(t.Accent)
+	}
+	left := bg.Render(" ") + hl.Bold(current).Render(arrow) + bg.Render(" ") + statusMark(t, f.Status, bg) + hl.Bold(true).Render(" "+name+" ")
 	right := counts(t, f.Adds, f.Dels, bg) + bg.Render(" ")
 	gap := width - ansi.StringWidth(left) - ansi.StringWidth(right)
 	if gap < 1 {
@@ -133,7 +139,7 @@ func buildRows(t Theme, files []*File, collapsed map[int]bool, width int) ([]row
 	starts := make([]int, len(files))
 	for fi, f := range files {
 		starts[fi] = len(rows)
-		rows = append(rows, row{file: fi, line: -1, header: true, text: fileHeader(t, f, collapsed[fi], width)})
+		rows = append(rows, row{file: fi, line: -1, header: true, text: fileHeader(t, f, collapsed[fi], width, false)})
 		if collapsed[fi] {
 			rows = append(rows, row{file: fi, line: -1})
 			continue
