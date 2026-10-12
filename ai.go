@@ -610,7 +610,10 @@ func (m *model) switchFocus() {
 		m.backToPane()
 		return
 	}
+	// Start without a selection: the pane's lines keep their gutter mark, and
+	// v picks other lines to ask about.
 	m.away, m.flash = true, ""
+	m.sel.on = false
 }
 
 // backToPane gives the keys back to the pane, selecting its lines again.

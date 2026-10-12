@@ -37,9 +37,8 @@ next time (`s` anywhere in ghdiff, or `Tab` while typing a question, picks it
 before asking), `Esc` closes.
 
 `Ctrl+O` leaves the pane open and hands the keys to the diff, like switching
-panes in tmux: scroll, change files, select other lines (`Esc` drops the
-selection, `v` starts a new one, `a` asks about it), `s` side/below. A question
-being typed is kept. `Ctrl+O` again, or `Esc` with nothing selected, goes back.
+panes in tmux: `s` side/below, scroll, change files, or select other lines
+(`v`, then `a` asks about them). A question being typed is kept. `Ctrl+O` again, or `Esc` with nothing selected, goes back.
 The same works in a review thread.
 
 Conversations are saved per PR (or per local repo for `git diff`) in

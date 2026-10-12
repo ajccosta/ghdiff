@@ -436,13 +436,12 @@ func (m *model) View() tea.View {
 		hints = "v select · n/p next/prev file · c collapse · t tree · s Claude side/below · q quit"
 	}
 	if m.away {
-		hints = "v select · n/p file · t tree · s side/below"
+		hints = "^O back to Claude · s side/below · v select other lines · n/p file · t tree · q quit"
 		if m.sel.on && !m.sel.anchored {
-			hints = "go to the first line, then press v to start selecting · o/r open what is here · esc cancel"
+			hints = "^O back to Claude · go to the first line, then press v to start selecting · esc cancel"
 		} else if m.sel.on {
-			hints = fmt.Sprintf("%d %s selected · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
+			hints = fmt.Sprintf("^O back to Claude · %d %s selected · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
 		}
-		hints = "^O back to Claude · " + hints
 	} else if m.thread != nil {
 		hints = m.threadHints()
 	} else if m.chat != nil {
