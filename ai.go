@@ -592,6 +592,17 @@ func (m *model) chatView(w, h int) []string {
 	return out
 }
 
+// usedClaude: there is a conversation with Claude on this diff (now or saved),
+// so the s layout key is worth showing.
+func (m *model) usedClaude() bool {
+	for _, c := range m.convos {
+		if len(c.turns) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // switchFocus (ctrl+o) moves the keys from the pane to the diff, where they
 // scroll and select as usual with the pane left open, and back.
 func (m *model) switchFocus() {

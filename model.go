@@ -431,9 +431,12 @@ func (m *model) View() tea.View {
 	}
 
 	// Footer.
-	hints := "↑↓ scroll · v select · n/p next/prev file · ← tree · c collapse · t tree · s Claude side/below · q quit"
+	hints := "v select · n/p next/prev file · c collapse · t tree · q quit"
+	if m.usedClaude() {
+		hints = "v select · n/p next/prev file · c collapse · t tree · s Claude side/below · q quit"
+	}
 	if m.away {
-		hints = "↑↓ scroll · v select · n/p file · ← tree · s side/below"
+		hints = "v select · n/p file · t tree · s side/below"
 		if m.sel.on && !m.sel.anchored {
 			hints = "↑↓ move · v start selecting · o/r open what is here · esc cancel"
 		} else if m.sel.on {
@@ -455,7 +458,7 @@ func (m *model) View() tea.View {
 	} else if m.sel.on {
 		hints = fmt.Sprintf("%d %s selected · ↑↓ extend · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
 	} else if m.focus == focusTree {
-		hints = "↑↓ pick file · enter/→ open · c collapse · tab diff · q quit"
+		hints = "enter open · c collapse · tab diff · q quit"
 	}
 	foot := lipgloss.NewStyle().Foreground(t.Dim).Render(ansi.Truncate(" "+hints, m.width, "…"))
 	if m.flash != "" {
