@@ -30,6 +30,7 @@ type model struct {
 	showTree bool
 	focus    focus
 	treeSel  int // index into files
+	pin      int // the file n/p/the tree jumped to when the view could not scroll to it, or -1
 
 	rows   []row
 	starts []int
@@ -50,6 +51,7 @@ func newModel(files []*File, title string, raw []byte, t target) *model {
 		dark:      true,
 		truecolor: true,
 		showTree:  len(files) > 1,
+		pin:       -1,
 		tree:      buildTree(files),
 	}
 	m.theme = themeFor(m.dark, m.truecolor)
@@ -114,6 +116,9 @@ func (m *model) clamp() { m.off = min(max(0, m.off), m.maxOff()) }
 
 // currentFile is the file whose rows are at the top of the diff pane.
 func (m *model) currentFile() int {
+	if m.pin >= 0 && m.pin < len(m.starts) {
+		return m.pin
+	}
 	cur := 0
 	for i, s := range m.starts {
 		if s <= m.off {
@@ -129,11 +134,21 @@ func (m *model) jumpTo(fi int) {
 	}
 	m.off = m.starts[fi]
 	m.clamp()
+	// When the rest fits on screen (files collapsed, or short files at the
+	// end) the view stops short of the file; remember it as the current one.
+	m.pin = -1
+	if m.off != m.starts[fi] {
+		m.pin = fi
+	}
 }
 
 func (m *model) scroll(n int) {
+	old := m.off
 	m.off += n
 	m.clamp()
+	if m.off != old {
+		m.pin = -1
+	}
 	if m.focus == focusDiff {
 		m.treeSel = m.currentFile()
 	}
