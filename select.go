@@ -136,6 +136,10 @@ func (m *model) selectKey(k string) (bool, tea.Cmd) {
 		if cs := m.convosAt(m.sel.file, m.sel.cursor); len(cs) > 0 {
 			m.openChats(cs)
 		}
+	case "r":
+		if ts := m.threadsAt(m.sel.file, m.sel.cursor); len(ts) > 0 {
+			m.openThreads(ts)
+		}
 	case "y":
 		if m.sel.anchored {
 			return true, m.copySelection()
@@ -182,9 +186,12 @@ func (m *model) markSelected(i int) string {
 	r := m.rows[i]
 	text := r.text
 	if !m.sel.has(r) {
-		if mark := m.convoMark(i); mark != "" {
-			return lipgloss.NewStyle().Foreground(m.theme.Accent).Faint(mark != "●").Render(mark) +
-				ansi.TruncateLeft(text, 1, "")
+		if mark, github := m.convoMark(i); mark != "" {
+			st := lipgloss.NewStyle().Foreground(m.theme.Accent)
+			if github {
+				st = st.Foreground(m.theme.ModFg)
+			}
+			return st.Faint(mark == "│").Render(mark) + ansi.TruncateLeft(text, 1, "")
 		}
 		return text
 	}

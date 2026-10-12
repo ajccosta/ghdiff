@@ -59,6 +59,16 @@ runs in, if its remote is the PR's repo), the first question asks whether
 Claude may read that repo; yes gives it Read, Grep and Glob there and nothing
 else, no gives it no tools at all.
 
+## GitHub review threads
+
+On a PR diff (from gh-dash, or `--pr N -R owner/repo`), the PR's review threads
+are fetched in the background and marked `◆` on their first line. Put the
+cursor (`v`) on one and press `r` to read it in the same pane as Claude: each
+comment with its author and date, rendered as Markdown (`m` raw). `a` writes a
+reply and `Enter` posts it; `<` `>` switch between threads on the same lines,
+`s` side/below, `Esc` closes. Outdated threads, and threads on single-commit
+diffs, are not shown, since their line numbers do not match.
+
 ## With gh-dash
 
 ```yaml

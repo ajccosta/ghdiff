@@ -208,23 +208,34 @@ func (m *model) convosAt(fi, li int) []*convo {
 	return out
 }
 
-// convoMark is the gutter mark for row i: ● on the first row of a
-// conversation's first line, │ on the rest, "" for none.
-func (m *model) convoMark(i int) string {
+// convoMark is the gutter mark for row i: on the first row of a review
+// thread's first line ◆ (and github true), of a Claude conversation's ●, │ on
+// their other lines, "" for none.
+func (m *model) convoMark(i int) (mark string, github bool) {
 	r := m.rows[i]
 	if r.line < 0 {
-		return ""
+		return "", false
 	}
 	first := i == 0 || m.rows[i-1].file != r.file || m.rows[i-1].line != r.line
-	mark := ""
+	for _, t := range m.threads {
+		if t.file != r.file || r.line < t.lo || r.line > t.hi {
+			continue
+		}
+		if r.line == t.lo && first {
+			return "◆", true
+		}
+		mark, github = "│", true
+	}
 	for _, c := range m.convos {
 		if c.file != r.file || r.line < c.lo || r.line > c.hi || len(c.turns) == 0 {
 			continue
 		}
 		if r.line == c.lo && first {
-			return "●"
+			return "●", false
 		}
-		mark = "│"
+		if mark == "" {
+			mark = "│"
+		}
 	}
-	return mark
+	return mark, github
 }

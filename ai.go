@@ -84,7 +84,10 @@ type chatState struct {
 	here        []*convo     // the ones on the open conversation's lines, for < >
 	unplaced    []savedConvo // saved ones whose lines are not in this diff
 	store       string       // the file they are saved in (store.go)
-	chat        *convo       // open in the bottom pane
+	chat        *convo       // open in the pane
+	threads     []*thread    // the PR's review threads (threads.go)
+	threadsHere []*thread    // the ones on the open thread's lines, for < >
+	thread      *thread      // open in the pane instead of a conversation
 	typing      bool
 	input       lineInput
 	raw         bool   // show answers as Claude wrote them, not rendered
@@ -141,10 +144,21 @@ func hasFiles(top string, files []*File) bool {
 
 // sideChat is whether the pane is right of the diff (s toggles); it needs
 // room for both, and the file tree is hidden meanwhile.
-func (m *model) sideChat() bool { return m.chat != nil && m.side && m.width >= 80 }
+func (m *model) sideChat() bool { return m.paneOpen() && m.side && m.width >= 80 }
+
+// paneOpen is whether a Claude conversation or a review thread is shown.
+func (m *model) paneOpen() bool { return m.chat != nil || m.thread != nil }
+
+// paneView draws whichever is open.
+func (m *model) paneView(w, h int) []string {
+	if m.thread != nil {
+		return m.threadView(w, h)
+	}
+	return m.chatView(w, h)
+}
 
 func (m *model) chatHeight() int {
-	if m.chat == nil || m.sideChat() {
+	if !m.paneOpen() || m.sideChat() {
 		return 0
 	}
 	return max(6, (m.height-2)*2/5)
@@ -458,15 +472,17 @@ func lineNo(n int) string {
 }
 
 // selLabel names a selection like "model.go:L12–L18" by its new-side lines.
-func (m *model) selLabel(c *convo) string {
-	f := m.files[c.file]
+func (m *model) selLabel(c *convo) string { return m.rangeLabel(c.file, c.lo, c.hi) }
+
+func (m *model) rangeLabel(fi, lo, hi int) string {
+	f := m.files[fi]
 	num := func(l Line) int {
 		if l.New != 0 {
 			return l.New
 		}
 		return l.Old
 	}
-	a, z := num(f.Lines[c.lo]), num(f.Lines[c.hi])
+	a, z := num(f.Lines[lo]), num(f.Lines[hi])
 	if a == z {
 		return fmt.Sprintf("%s:L%d", f.Path(), a)
 	}
@@ -594,18 +610,21 @@ func (m *model) markdown(tn *turn, w int) string {
 	if tn.md != "" && tn.mdW == w && tn.mdDark == m.dark {
 		return tn.md
 	}
+	tn.md, tn.mdW, tn.mdDark = m.renderMarkdown(tn.a, w), w, m.dark
+	return tn.md
+}
+
+func (m *model) renderMarkdown(text string, w int) string {
 	style := "light"
 	if m.dark {
 		style = "dark"
 	}
-	out := tn.a
 	if r, err := glamour.NewTermRenderer(glamour.WithStandardStyle(style), glamour.WithWordWrap(w)); err == nil {
-		if s, err := r.Render(tn.a); err == nil {
-			out = strings.Trim(s, "\n")
+		if s, err := r.Render(text); err == nil {
+			return strings.Trim(s, "\n")
 		}
 	}
-	tn.md, tn.mdW, tn.mdDark = out, w, m.dark
-	return out
+	return text
 }
 
 // toggleSide moves the Claude pane between right of the diff and below it;
@@ -613,7 +632,7 @@ func (m *model) markdown(tn *turn, w int) string {
 func (m *model) toggleSide() {
 	m.side = !m.side
 	m.saveSettings()
-	if m.chat == nil {
+	if !m.paneOpen() {
 		m.flash = "Claude pane will open below the diff"
 		if m.side {
 			m.flash = "Claude pane will open right of the diff"
@@ -629,7 +648,11 @@ func (m *model) inputLine() string {
 	if m.side {
 		where = "below"
 	}
-	label := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Accent).Render(" Ask Claude ") +
+	what := " Ask Claude "
+	if m.thread != nil {
+		what = " Reply on GitHub "
+	}
+	label := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Accent).Render(what) +
 		lipgloss.NewStyle().Foreground(m.theme.Dim).Render("(tab: "+where+")") +
 		lipgloss.NewStyle().Bold(true).Foreground(m.theme.Accent).Render(": ")
 	return label + m.input.view(max(1, m.width-ansi.StringWidth(label)-1))

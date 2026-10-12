@@ -58,7 +58,7 @@ func newModel(files []*File, title string, raw []byte, t target) *model {
 	return m
 }
 
-func (m *model) Init() tea.Cmd { return tea.RequestBackgroundColor }
+func (m *model) Init() tea.Cmd { return tea.Batch(tea.RequestBackgroundColor, m.fetchThreads()) }
 
 func (m *model) treeWidth() int {
 	if !m.showTree || m.width < 60 || m.sideChat() {
@@ -175,11 +175,18 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.gotAnswer(msg)
 	case postedMsg:
 		m.gotPosted(msg)
+	case threadsMsg:
+		m.gotThreads(msg)
+	case replyMsg:
+		m.gotReply(msg)
 	case tea.PasteMsg:
-		if m.chat != nil && m.typing {
+		if m.paneOpen() && m.typing {
 			m.input.insert(strings.ReplaceAll(msg.Content, "\n", " "))
 		}
 	case tea.KeyPressMsg:
+		if m.thread != nil {
+			return m, m.threadKey(msg)
+		}
 		if m.chat != nil {
 			return m, m.chatKey(msg)
 		}
@@ -387,24 +394,29 @@ func (m *model) View() tea.View {
 	if cw := m.chatWidth(); cw > 0 {
 		// Claude on the right: pad the diff out to its width, then the pane.
 		sep := lipgloss.NewStyle().Foreground(t.Dim).Render("│")
-		chat := m.chatView(cw, h)
+		chat := m.paneView(cw, h)
 		lw := m.width - cw - 1
 		for i := range lines {
 			l := ansi.Truncate(lines[i], lw, "")
 			lines[i] = l + strings.Repeat(" ", max(0, lw-ansi.StringWidth(l))) + sep + chat[i]
 		}
-	} else if m.chat != nil {
-		lines = append(lines, m.chatView(m.width, m.chatHeight())...)
+	} else if m.paneOpen() {
+		lines = append(lines, m.paneView(m.width, m.chatHeight())...)
 	}
 
 	// Footer.
 	hints := "↑↓ scroll · v select · n/p next/prev file · ← tree · c collapse · t tree · s Claude side/below · q quit"
-	if m.chat != nil {
+	if m.thread != nil {
+		hints = m.threadHints()
+	} else if m.chat != nil {
 		hints = m.chatHints()
 	} else if m.sel.on && !m.sel.anchored {
 		hints = "move to the first line with ↑↓, then press v to start selecting · esc cancel"
 		if n := len(m.convosAt(m.sel.file, m.sel.cursor)); n > 0 {
-			hints = fmt.Sprintf("%d Claude %s here · o open · ", n, plural(n, "conversation", "conversations")) + hints
+			hints = fmt.Sprintf("%d Claude %s · o open · ", n, plural(n, "conversation", "conversations")) + hints
+		}
+		if n := len(m.threadsAt(m.sel.file, m.sel.cursor)); n > 0 {
+			hints = fmt.Sprintf("%d review %s · r read · ", n, plural(n, "thread", "threads")) + hints
 		}
 	} else if m.sel.on {
 		hints = fmt.Sprintf("%d %s selected · ↑↓ extend · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
@@ -415,7 +427,7 @@ func (m *model) View() tea.View {
 	if m.flash != "" {
 		foot = lipgloss.NewStyle().Foreground(t.Accent).Render(" " + m.flash)
 	}
-	if m.chat != nil && m.typing {
+	if m.paneOpen() && m.typing {
 		foot = m.inputLine()
 	}
 
