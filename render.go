@@ -126,7 +126,7 @@ func buildRows(t Theme, files []*File, collapsed map[int]bool, width int) ([]row
 		}
 	}
 	nw := max(3, digits(maxNo))
-	gutterW := 2*nw + 4 // "old new s "
+	gutterW := 2*nw + 5 // "old new  s "
 	cw := max(10, width-gutterW)
 
 	var rows []row
@@ -160,11 +160,11 @@ func renderLine(t Theme, l Line, nw, cw, width int) []string {
 	switch l.Kind {
 	case Hunk:
 		s := lipgloss.NewStyle().Background(t.HunkBg).Foreground(t.HunkFg)
-		text := ansi.Truncate(strings.Repeat(" ", 2*nw+4)+l.Text, width, "…")
+		text := ansi.Truncate(strings.Repeat(" ", 2*nw+5)+l.Text, width, "…")
 		return []string{s.Render(text + strings.Repeat(" ", max(0, width-ansi.StringWidth(text))))}
 	case Note:
 		s := lipgloss.NewStyle().Foreground(t.Dim).Italic(true)
-		return []string{s.Render(strings.Repeat(" ", 2*nw+4) + l.Text)}
+		return []string{s.Render(strings.Repeat(" ", 2*nw+5) + l.Text)}
 	}
 
 	var lineBg, wordBg, gutterBg color.Color
@@ -227,10 +227,10 @@ func renderLine(t Theme, l Line, nw, cw, width int) []string {
 			b.WriteString(gutter.Render(num(l.Old) + " " + num(l.New) + " "))
 			b.WriteString(signStyle.Render(" " + sign + " "))
 		} else {
-			b.WriteString(gutter.Render(strings.Repeat(" ", 2*nw+1)))
+			b.WriteString(gutter.Render(strings.Repeat(" ", 2*nw+2)))
 			b.WriteString(base.Render("   "))
 		}
-		used := 2*nw + 4
+		used := 2*nw + 5
 		for i := 0; i < len(ch); {
 			j := i
 			var seg strings.Builder
