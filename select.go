@@ -196,9 +196,13 @@ func (m *model) markSelected(i int) string {
 		return text
 	}
 	bar := lipgloss.NewStyle().Foreground(m.theme.Accent)
-	if r.line == m.sel.cursor && r.file == m.sel.file {
+	first := i == 0 || m.rows[i-1].file != r.file || m.rows[i-1].line != r.line
+	if r.line == m.sel.cursor && r.file == m.sel.file && first { // not on a wrapped line's other rows
 		bar = bar.Bold(true)
 		return bar.Render("▶") + ansi.TruncateLeft(text, 1, "")
+	}
+	if !m.sel.anchored {
+		return text // just the cursor: nothing selected yet
 	}
 	return bar.Render("▌") + ansi.TruncateLeft(text, 1, "")
 }
