@@ -213,6 +213,9 @@ func (m *model) key(k string) tea.Cmd {
 			}
 		}
 		return nil
+	case "s":
+		m.toggleSide()
+		return nil
 	case "t":
 		m.showTree = !m.showTree
 		if !m.showTree {
@@ -395,7 +398,7 @@ func (m *model) View() tea.View {
 	}
 
 	// Footer.
-	hints := "↑↓ scroll · v select · n/p next/prev file · ← tree · c collapse · t tree · q quit"
+	hints := "↑↓ scroll · v select · n/p next/prev file · ← tree · c collapse · t tree · s Claude side/below · q quit"
 	if m.chat != nil {
 		hints = m.chatHints()
 	} else if m.sel.on && !m.sel.anchored {

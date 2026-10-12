@@ -277,6 +277,8 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 			}
 		case "ctrl+c":
 			return tea.Quit
+		case "tab":
+			m.toggleSide()
 		default:
 			m.input.key(k, msg.Key().Text)
 		}
@@ -291,10 +293,7 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 		case "m":
 			m.raw = !m.raw
 		case "s":
-			m.side = !m.side
-			m.saveSettings()
-			m.relayout()
-			m.showCursor()
+			m.toggleSide()
 		case "N":
 			if !m.chat.busy {
 				m.newChat(m.chat.file, m.chat.lo, m.chat.hi)
@@ -609,7 +608,29 @@ func (m *model) markdown(tn *turn, w int) string {
 	return out
 }
 
+// toggleSide moves the Claude pane between right of the diff and below it;
+// with no conversation open, it picks where the next one opens.
+func (m *model) toggleSide() {
+	m.side = !m.side
+	m.saveSettings()
+	if m.chat == nil {
+		m.flash = "Claude pane will open below the diff"
+		if m.side {
+			m.flash = "Claude pane will open right of the diff"
+		}
+		return
+	}
+	m.relayout()
+	m.showCursor()
+}
+
 func (m *model) inputLine() string {
-	label := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Accent).Render(" Ask Claude: ")
+	where := "side"
+	if m.side {
+		where = "below"
+	}
+	label := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Accent).Render(" Ask Claude ") +
+		lipgloss.NewStyle().Foreground(m.theme.Dim).Render("(tab: "+where+")") +
+		lipgloss.NewStyle().Bold(true).Foreground(m.theme.Accent).Render(": ")
 	return label + m.input.view(max(1, m.width-ansi.StringWidth(label)-1))
 }
