@@ -313,19 +313,19 @@ func (m *model) threadView(w, h int) []string {
 	t := m.thread
 	dim := lipgloss.NewStyle().Foreground(th.Dim)
 
-	title := " GitHub · " + m.rangeLabel(t.file, t.lo, t.hi) + " "
-	if t.resolved {
-		title += "· resolved "
-	}
+	title := "GitHub · " + m.shortRange(t.file, t.lo, t.hi)
 	if n := len(m.threadsHere); n > 1 {
 		for i, o := range m.threadsHere {
 			if o == t {
-				title += fmt.Sprintf("· thread %d/%d ", i+1, n)
+				title += fmt.Sprintf(" · %d/%d", i+1, n)
 			}
 		}
 	}
-	rule := dim.Render("──") + lipgloss.NewStyle().Bold(true).Foreground(th.ModFg).Render(ansi.Truncate(title, w-4, "…"))
-	rule += dim.Render(strings.Repeat("─", max(0, w-ansi.StringWidth(rule))))
+	details := ""
+	if t.resolved {
+		details = "resolved"
+	}
+	rule := m.paneRule(w, title, details, th.ModFg)
 
 	wrap := lipgloss.NewStyle().Width(w - 2)
 	var body []string

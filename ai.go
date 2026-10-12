@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"image/color"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -506,6 +507,28 @@ func (m *model) rangeLabel(fi, lo, hi int) string {
 	return fmt.Sprintf("%s:L%d–L%d", f.Path(), a, z)
 }
 
+// paneRule is a pane's title line: the title in bold, then dim details at
+// the right when there is room for them.
+func (m *model) paneRule(w int, title, details string, fg color.Color) string {
+	dim := lipgloss.NewStyle().Foreground(m.theme.Dim)
+	rule := dim.Render("──") + lipgloss.NewStyle().Bold(true).Foreground(fg).Render(ansi.Truncate(" "+title+" ", w-4, "…"))
+	right := ""
+	if details != "" {
+		right = " " + details + " ──"
+	}
+	if ansi.StringWidth(rule)+ansi.StringWidth(right)+2 > w {
+		right = ""
+	}
+	return rule + dim.Render(strings.Repeat("─", max(0, w-ansi.StringWidth(rule)-ansi.StringWidth(right)))+right)
+}
+
+// shortRange is "model.go:12–18": the file's name without its folders.
+func (m *model) shortRange(fi, lo, hi int) string {
+	full := m.rangeLabel(fi, lo, hi)
+	path := m.files[fi].Path()
+	return strings.Replace(strings.Replace(full, path, filepath.Base(path), 1), "–L", "–", 1)
+}
+
 // chatView draws the conversation pane: a title rule and the turns.
 func (m *model) chatView(w, h int) []string {
 	t := m.theme
@@ -516,19 +539,19 @@ func (m *model) chatView(w, h int) []string {
 	if c.readRepo || (c.session == "" && m.repoOK == 1) {
 		ctx = "reading " + filepath.Base(m.repo)
 	}
-	title := " Claude · " + m.selLabel(c) + " · " + ctx + " "
+	title := "Claude · " + m.shortRange(c.file, c.lo, c.hi)
 	if n := len(m.here); n > 1 {
 		for i, o := range m.here {
 			if o == c {
-				title += fmt.Sprintf("· conversation %d/%d ", i+1, n)
+				title += fmt.Sprintf(" · %d/%d", i+1, n)
 			}
 		}
 	}
+	details := ctx
 	if !c.created.IsZero() {
-		title += "· " + c.created.Format("Jan 2 15:04") + " "
+		details += " · " + c.created.Format("Jan 2 15:04")
 	}
-	rule := dim.Render("──") + lipgloss.NewStyle().Bold(true).Foreground(t.Accent).Render(ansi.Truncate(title, w-4, "…"))
-	rule += dim.Render(strings.Repeat("─", max(0, w-ansi.StringWidth(rule))))
+	rule := m.paneRule(w, title, details, t.Accent)
 
 	wrap := lipgloss.NewStyle().Width(w - 2)
 	var body []string
