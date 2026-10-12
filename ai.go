@@ -171,6 +171,9 @@ func (m *model) chatHeight() int {
 	if !m.paneOpen() || m.sideChat() {
 		return 0
 	}
+	if m.PaneH > 0 {
+		return max(4, min(m.PaneH, m.height-6))
+	}
 	return max(6, (m.height-2)*2/5)
 }
 
@@ -179,6 +182,9 @@ func (m *model) chatWidth() int {
 		return 0
 	}
 	rest := m.besideTree()
+	if m.PaneW > 0 {
+		return max(24, min(m.PaneW, rest-30))
+	}
 	return min(max(40, rest*2/5), rest-40)
 }
 

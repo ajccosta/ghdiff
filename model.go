@@ -39,6 +39,9 @@ type model struct {
 
 	sel   selection
 	flash string // a one-off note for the footer, cleared by the next key
+	help  bool   // the help pane (h or ?) is showing
+	drag  drag   // what the held mouse button moves
+	sizes
 	chatState
 }
 
@@ -65,6 +68,9 @@ func (m *model) Init() tea.Cmd { return tea.Batch(tea.RequestBackgroundColor, m.
 func (m *model) treeWidth() int {
 	if !m.showTree || m.width < 60 {
 		return 0
+	}
+	if m.TreeW > 0 {
+		return max(12, min(m.TreeW, m.width-40))
 	}
 	return min(40, max(20, m.width/4))
 }
@@ -179,13 +185,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scroll(step)
 		}
 	case tea.MouseClickMsg:
-		mo := msg.Mouse()
-		if mo.X < m.treeWidth() {
-			if i := m.treeTop() + mo.Y - 1; mo.Y >= 1 && i < len(m.tree) && m.tree[i].file >= 0 {
-				m.treeSel = m.tree[i].file
-				m.jumpTo(m.treeSel)
-			}
-		}
+		m.mouseClick(msg)
+	case tea.MouseMotionMsg:
+		m.mouseMotion(msg)
+	case tea.MouseReleaseMsg:
+		m.mouseRelease()
 	case answerMsg:
 		m.gotAnswer(msg)
 	case postedMsg:
@@ -199,7 +203,21 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.insert(strings.ReplaceAll(msg.Content, "\n", " "))
 		}
 	case tea.KeyPressMsg:
-		if msg.String() == "ctrl+o" && m.paneOpen() && !m.consent && !m.confirmPost {
+		k := msg.String()
+		if m.help {
+			m.help = false
+			return m, nil
+		}
+		if (!m.typing || m.away) && !m.consent && !m.confirmPost {
+			if k == "h" || k == "?" {
+				m.help, m.flash = true, ""
+				return m, nil
+			}
+			if m.sizeKey(k) {
+				return m, nil
+			}
+		}
+		if k == "ctrl+o" && m.paneOpen() && !m.consent && !m.confirmPost {
 			m.switchFocus()
 			return m, nil
 		}
@@ -319,7 +337,7 @@ func (m *model) key(k string) tea.Cmd {
 		m.scroll(len(m.rows))
 	case "v":
 		m.startCursor()
-	case "left", "h":
+	case "left":
 		if m.treeWidth() > 0 {
 			m.focus, m.treeSel = focusTree, m.currentFile()
 		}
@@ -430,6 +448,10 @@ func (m *model) View() tea.View {
 		lines = append(lines, m.paneView(m.width, m.chatHeight())...)
 	}
 
+	if m.help {
+		lines = m.helpView(m.width, len(lines))
+	}
+
 	// Footer.
 	hints := "v select · n/p next/prev file · c collapse · t tree · q quit"
 	if m.usedClaude() {
@@ -458,6 +480,12 @@ func (m *model) View() tea.View {
 		hints = fmt.Sprintf("%d %s selected · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
 	} else if m.focus == focusTree {
 		hints = "enter open · c collapse · tab diff · q quit"
+	}
+	if !m.away && m.chat == nil && m.thread == nil && !m.sel.on && m.focus == focusDiff {
+		hints += " · h help"
+	}
+	if m.help {
+		hints = "any key closes help"
 	}
 	foot := lipgloss.NewStyle().Foreground(t.Dim).Render(ansi.Truncate(" "+hints, m.width, "…"))
 	if m.flash != "" {

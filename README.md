@@ -18,7 +18,12 @@ ghdiff --commit SHA [-R owner/repo]
 
 Keys: `↑↓`/`jk` scroll · `space`/`b` page · `n`/`p` next/previous file ·
 `←` or `Tab` file tree (`↑↓` pick, `Enter`/`→` open) · `c` collapse file ·
-`C` collapse all · `t` hide tree · `q` quit.
+`C` collapse all · `t` hide tree · `h` or `?` help · `q` quit.
+
+Mouse: click a line to select it and drag to extend; drag the border between
+the tree and the diff, or around the Claude pane, to resize. `+`/`-` make the
+Claude pane bigger or smaller and `{`/`}` the tree narrower or wider; sizes
+are remembered.
 
 `v` shows a line cursor: move it with `↑↓`, press `v` again to start selecting,
 then `↑↓` extend the selection (within one hunk). `Esc` cancels at any point.

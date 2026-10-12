@@ -43,6 +43,7 @@ type savedFile struct {
 // conversations.
 type settings struct {
 	ChatSide bool `json:"chatSide"`
+	sizes
 }
 
 // stateDir is ghdiff's folder under $XDG_STATE_HOME (~/.local/state).
@@ -63,7 +64,7 @@ func settingsPath() string { return filepath.Join(stateDir(), "settings.json") }
 func (m *model) loadSettings() {
 	var s settings
 	if b, err := os.ReadFile(settingsPath()); err == nil && json.Unmarshal(b, &s) == nil {
-		m.side = s.ChatSide
+		m.side, m.sizes = s.ChatSide, s.sizes
 	}
 }
 
@@ -72,7 +73,7 @@ func (m *model) saveSettings() {
 		return
 	}
 	p := settingsPath()
-	b, _ := json.MarshalIndent(settings{ChatSide: m.side}, "", "  ")
+	b, _ := json.MarshalIndent(settings{ChatSide: m.side, sizes: m.sizes}, "", "  ")
 	os.MkdirAll(filepath.Dir(p), 0o755)
 	os.WriteFile(p, b, 0o600)
 }
