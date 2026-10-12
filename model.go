@@ -216,7 +216,7 @@ func (m *model) key(k string) tea.Cmd {
 		}
 	}
 	switch k {
-	case "q", "esc", "ctrl+c":
+	case "q", "ctrl+c":
 		return tea.Quit
 	case "tab":
 		if m.treeWidth() > 0 {

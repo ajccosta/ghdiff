@@ -18,7 +18,7 @@ ghdiff --commit SHA [-R owner/repo]
 
 Keys: `↑↓`/`jk` scroll · `space`/`b` page · `n`/`p` next/previous file ·
 `←` or `Tab` file tree (`↑↓` pick, `Enter`/`→` open) · `c` collapse file ·
-`C` collapse all · `t` hide tree · `q`/`Esc` quit.
+`C` collapse all · `t` hide tree · `q` quit.
 
 `v` shows a line cursor: move it with `↑↓`, press `v` again to start selecting,
 then `↑↓` extend the selection (within one hunk). `Esc` cancels at any point.
