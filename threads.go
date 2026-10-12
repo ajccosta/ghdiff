@@ -185,6 +185,13 @@ func (m *model) openThreads(ts []*thread) {
 }
 
 func (m *model) showThread(t *thread) {
+	if c := m.chat; c != nil {
+		if len(c.turns) == 0 {
+			m.dropConvo(c)
+		}
+		m.chat, m.here = nil, nil
+	}
+	m.away = false
 	m.thread = t
 	m.typing = false
 	m.sel = selection{on: true, anchored: true, file: t.file, anchor: t.lo, cursor: t.hi}
@@ -193,7 +200,7 @@ func (m *model) showThread(t *thread) {
 }
 
 func (m *model) closeThread() {
-	m.thread, m.threadsHere, m.typing = nil, nil, false
+	m.thread, m.threadsHere, m.typing, m.away = nil, nil, false, false
 	m.sel.on = false
 	m.relayout()
 }
@@ -359,7 +366,7 @@ func (m *model) threadView(w, h int) []string {
 
 func (m *model) threadHints() string {
 	if m.typing {
-		return "enter posts the reply · esc cancel"
+		return "enter posts the reply · ^O diff · esc cancel"
 	}
 	if m.thread.posting {
 		return "↑↓ scroll · esc close"
@@ -376,5 +383,5 @@ func (m *model) threadHints() string {
 	if m.side {
 		layout = "s below"
 	}
-	return "a reply · " + other + "↑↓ scroll · " + view + " · " + layout + " · esc close"
+	return "a reply · " + other + "↑↓ scroll · " + view + " · " + layout + " · ^O diff · esc close"
 }

@@ -97,6 +97,7 @@ type chatState struct {
 	consent     bool   // waiting for y/n on reading repo
 	confirmPost bool   // waiting for y/n on posting to the PR
 	pendingQ    string // the question held while asking for consent
+	away        bool   // ctrl+o: the pane stays open but keys go to the diff
 }
 
 // findRepo returns a local clone Claude can read: gh-dash's repoPaths entry,
@@ -212,6 +213,13 @@ func (m *model) openChats(cs []*convo) {
 
 // showChat puts a conversation in the pane and selects its lines.
 func (m *model) showChat(c *convo) {
+	if old := m.chat; old != nil && old != c {
+		if len(old.turns) == 0 {
+			m.dropConvo(old)
+		}
+		m.typing = false
+	}
+	m.thread, m.threadsHere, m.away = nil, nil, false
 	m.chat = c
 	m.sel = selection{on: true, anchored: true, file: c.file, anchor: c.lo, cursor: c.hi}
 	m.relayout()
@@ -227,7 +235,7 @@ func (m *model) closeChat() {
 			m.dropConvo(c)
 		}
 	}
-	m.chat, m.here, m.typing, m.consent = nil, nil, false, false
+	m.chat, m.here, m.typing, m.consent, m.away = nil, nil, false, false, false
 	m.sel.on = false
 	m.relayout()
 }
@@ -584,6 +592,41 @@ func (m *model) chatView(w, h int) []string {
 	return out
 }
 
+// switchFocus (ctrl+o) moves the keys from the pane to the diff, where they
+// scroll and select as usual with the pane left open, and back.
+func (m *model) switchFocus() {
+	if m.away {
+		m.backToPane()
+		return
+	}
+	m.away, m.flash = true, ""
+}
+
+// backToPane gives the keys back to the pane, selecting its lines again.
+func (m *model) backToPane() {
+	m.away, m.focus = false, focusDiff
+	fi, lo, hi := m.paneLines()
+	m.sel = selection{on: true, anchored: true, file: fi, anchor: lo, cursor: hi}
+	m.showCursor()
+}
+
+func (m *model) paneLines() (file, lo, hi int) {
+	if t := m.thread; t != nil {
+		return t.file, t.lo, t.hi
+	}
+	return m.chat.file, m.chat.lo, m.chat.hi
+}
+
+// awayKey is a key pressed in the diff while the pane is open. a, o and r
+// open a pane on what is selected, and esc with nothing selected goes back.
+func (m *model) awayKey(k string) tea.Cmd {
+	if k == "esc" && !m.sel.on {
+		m.backToPane()
+		return nil
+	}
+	return m.key(k)
+}
+
 func (m *model) chatHints() string {
 	switch {
 	case m.confirmPost:
@@ -591,7 +634,7 @@ func (m *model) chatHints() string {
 	case m.consent:
 		return "y let Claude read the repo · n diff only · esc cancel"
 	case m.typing:
-		return "enter send · esc cancel"
+		return "enter send · ^O diff · esc cancel"
 	case m.chat.busy:
 		return "↑↓ scroll · esc close (stops Claude)"
 	}
@@ -611,7 +654,7 @@ func (m *model) chatHints() string {
 	if m.side {
 		layout = "s below"
 	}
-	return "a follow-up · N new · " + other + "↑↓ scroll · " + view + " · " + layout + " · " + post + "esc close"
+	return "a follow-up · N new · " + other + "↑↓ scroll · " + view + " · " + layout + " · " + post + "^O diff · esc close"
 }
 
 // markdown renders an answer, caching it until the width or theme changes.
@@ -658,5 +701,11 @@ func (m *model) inputLine(w int) string {
 		what = " Reply: "
 	}
 	label := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Accent).Render(what)
+	if m.away {
+		// Keys are in the diff: the draft, dimmed and without a cursor.
+		label = lipgloss.NewStyle().Foreground(m.theme.Dim).Render(what)
+		draft := ansi.Truncate(m.input.String(), max(1, w-ansi.StringWidth(label)-1), "…")
+		return label + lipgloss.NewStyle().Foreground(m.theme.Dim).Render(draft)
+	}
 	return label + m.input.view(max(1, w-ansi.StringWidth(label)-1))
 }

@@ -184,6 +184,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.insert(strings.ReplaceAll(msg.Content, "\n", " "))
 		}
 	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+o" && m.paneOpen() && !m.consent && !m.confirmPost {
+			m.switchFocus()
+			return m, nil
+		}
+		if m.away {
+			return m, m.awayKey(msg.String())
+		}
 		if m.thread != nil {
 			return m, m.threadKey(msg)
 		}
@@ -410,7 +417,15 @@ func (m *model) View() tea.View {
 
 	// Footer.
 	hints := "↑↓ scroll · v select · n/p next/prev file · ← tree · c collapse · t tree · s Claude side/below · q quit"
-	if m.thread != nil {
+	if m.away {
+		hints = "↑↓ scroll · v select · n/p file · ← tree · s side/below"
+		if m.sel.on && !m.sel.anchored {
+			hints = "↑↓ move · v start selecting · o/r open what is here · esc cancel"
+		} else if m.sel.on {
+			hints = fmt.Sprintf("%d %s selected · ↑↓ extend · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
+		}
+		hints = "^O back to Claude · " + hints
+	} else if m.thread != nil {
 		hints = m.threadHints()
 	} else if m.chat != nil {
 		hints = m.chatHints()
@@ -431,7 +446,7 @@ func (m *model) View() tea.View {
 	if m.flash != "" {
 		foot = lipgloss.NewStyle().Foreground(t.Accent).Render(" " + m.flash)
 	}
-	if m.paneOpen() && m.typing && !m.sideChat() {
+	if m.paneOpen() && m.typing && !m.sideChat() && !m.away {
 		foot = m.inputLine(m.width)
 	}
 
