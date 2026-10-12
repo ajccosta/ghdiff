@@ -39,6 +39,44 @@ type savedFile struct {
 	Convos []savedConvo `json:"convos"`
 }
 
+// settings are ghdiff's remembered choices, in settings.json next to the
+// conversations.
+type settings struct {
+	ChatSide bool `json:"chatSide"`
+}
+
+// stateDir is ghdiff's folder under $XDG_STATE_HOME (~/.local/state).
+func stateDir() string {
+	dir := os.Getenv("XDG_STATE_HOME")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		dir = filepath.Join(home, ".local", "state")
+	}
+	return filepath.Join(dir, "ghdiff")
+}
+
+func settingsPath() string { return filepath.Join(stateDir(), "settings.json") }
+
+func (m *model) loadSettings() {
+	var s settings
+	if b, err := os.ReadFile(settingsPath()); err == nil && json.Unmarshal(b, &s) == nil {
+		m.side = s.ChatSide
+	}
+}
+
+func (m *model) saveSettings() {
+	if stateDir() == "" {
+		return
+	}
+	p := settingsPath()
+	b, _ := json.MarshalIndent(settings{ChatSide: m.side}, "", "  ")
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	os.WriteFile(p, b, 0o600)
+}
+
 var unsafeRe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
 // storePath names the file for this diff: by PR, by repo and commit, or by
@@ -57,15 +95,10 @@ func storePath(t target) string {
 		}
 		key = "local" + strings.TrimSpace(string(out))
 	}
-	dir := os.Getenv("XDG_STATE_HOME")
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		dir = filepath.Join(home, ".local", "state")
+	if stateDir() == "" {
+		return ""
 	}
-	return filepath.Join(dir, "ghdiff", "conversations", unsafeRe.ReplaceAllString(key, "_")+".json")
+	return filepath.Join(stateDir(), "conversations", unsafeRe.ReplaceAllString(key, "_")+".json")
 }
 
 func lineSig(l Line) string {

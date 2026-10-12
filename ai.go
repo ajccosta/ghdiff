@@ -88,6 +88,7 @@ type chatState struct {
 	typing      bool
 	input       lineInput
 	raw         bool   // show answers as Claude wrote them, not rendered
+	side        bool   // the pane goes right of the diff, not below it
 	repo        string // local clone holding the diff's files, "" if none
 	repoOK      int    // 0 not asked yet, 1 yes, -1 no
 	consent     bool   // waiting for y/n on reading repo
@@ -138,11 +139,30 @@ func hasFiles(top string, files []*File) bool {
 	return false
 }
 
+// sideChat is whether the pane is right of the diff (s toggles); it needs
+// room for both, and the file tree is hidden meanwhile.
+func (m *model) sideChat() bool { return m.chat != nil && m.side && m.width >= 80 }
+
 func (m *model) chatHeight() int {
-	if m.chat == nil {
+	if m.chat == nil || m.sideChat() {
 		return 0
 	}
 	return max(6, (m.height-2)*2/5)
+}
+
+func (m *model) chatWidth() int {
+	if !m.sideChat() {
+		return 0
+	}
+	return min(max(40, m.width*2/5), m.width-40)
+}
+
+// chatRows is how many lines of the conversation are on screen.
+func (m *model) chatRows() int {
+	if m.sideChat() {
+		return m.paneHeight() - 1
+	}
+	return m.chatHeight() - 1
 }
 
 // newChat starts a conversation on the given lines, keeping any earlier ones.
@@ -171,7 +191,7 @@ func (m *model) openChats(cs []*convo) {
 func (m *model) showChat(c *convo) {
 	m.chat = c
 	m.sel = selection{on: true, anchored: true, file: c.file, anchor: c.lo, cursor: c.hi}
-	m.clamp()
+	m.relayout()
 	m.showCursor()
 }
 
@@ -186,7 +206,7 @@ func (m *model) closeChat() {
 	}
 	m.chat, m.here, m.typing, m.consent = nil, nil, false, false
 	m.sel.on = false
-	m.clamp()
+	m.relayout()
 }
 
 func (m *model) dropConvo(c *convo) {
@@ -270,6 +290,11 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 			m.closeChat()
 		case "m":
 			m.raw = !m.raw
+		case "s":
+			m.side = !m.side
+			m.saveSettings()
+			m.relayout()
+			m.showCursor()
 		case "N":
 			if !m.chat.busy {
 				m.newChat(m.chat.file, m.chat.lo, m.chat.hi)
@@ -293,9 +318,9 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 		case "down", "j":
 			m.chat.scroll++
 		case "pgup", "b":
-			m.chat.scroll -= m.chatHeight() - 2
+			m.chat.scroll -= m.chatRows() - 1
 		case "pgdown", "space", "f":
-			m.chat.scroll += m.chatHeight() - 2
+			m.chat.scroll += m.chatRows() - 1
 		}
 	}
 	return nil
@@ -450,11 +475,9 @@ func (m *model) selLabel(c *convo) string {
 }
 
 // chatView draws the conversation pane: a title rule and the turns.
-func (m *model) chatView() []string {
+func (m *model) chatView(w, h int) []string {
 	t := m.theme
 	c := m.chat
-	h := m.chatHeight()
-	w := m.width
 	dim := lipgloss.NewStyle().Foreground(t.Dim)
 
 	ctx := "diff only"
@@ -530,7 +553,7 @@ func (m *model) chatView() []string {
 	for i := 0; i < view; i++ {
 		line := ""
 		if j := c.scroll + i; j < len(body) {
-			line = " " + body[j]
+			line = ansi.Truncate(" "+body[j], w, "")
 		}
 		out = append(out, line)
 	}
@@ -560,7 +583,11 @@ func (m *model) chatHints() string {
 	if len(m.here) > 1 {
 		other = "< > switch · "
 	}
-	return "a follow-up · N new · " + other + "↑↓ scroll · " + view + " · " + post + "esc close"
+	layout := "s side"
+	if m.side {
+		layout = "s below"
+	}
+	return "a follow-up · N new · " + other + "↑↓ scroll · " + view + " · " + layout + " · " + post + "esc close"
 }
 
 // markdown renders an answer, caching it until the width or theme changes.

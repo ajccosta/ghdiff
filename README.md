@@ -32,7 +32,8 @@ Claude login; no API key). The answer opens in a pane under the diff: `a` asks a
 follow-up in the same Claude session, `N` starts a new conversation on the same
 lines (the old one is kept), `<` `>` switch between the conversations there,
 `↑↓` scroll, `m` switches between formatted Markdown and Claude's raw text,
-`Esc` closes.
+`s` moves the pane to the right of the diff (hiding the file tree) and back
+below it, remembered for next time, `Esc` closes.
 
 Conversations are saved per PR (or per local repo for `git diff`) in
 `~/.local/state/ghdiff/conversations/`, so they are there the next time the diff

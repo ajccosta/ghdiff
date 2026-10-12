@@ -54,23 +54,28 @@ func newModel(files []*File, title string, raw []byte, t target) *model {
 	}
 	m.theme = themeFor(m.dark, m.truecolor)
 	m.loadConvos()
+	m.loadSettings()
 	return m
 }
 
 func (m *model) Init() tea.Cmd { return tea.RequestBackgroundColor }
 
 func (m *model) treeWidth() int {
-	if !m.showTree || m.width < 60 {
+	if !m.showTree || m.width < 60 || m.sideChat() {
 		return 0
 	}
 	return min(40, max(20, m.width/4))
 }
 
 func (m *model) diffWidth() int {
+	w := m.width
 	if tw := m.treeWidth(); tw > 0 {
-		return m.width - tw - 1
+		w -= tw + 1
 	}
-	return m.width
+	if cw := m.chatWidth(); cw > 0 {
+		w -= cw + 1
+	}
+	return w
 }
 
 func (m *model) paneHeight() int { return max(1, m.height-2-m.chatHeight()) }
@@ -376,8 +381,17 @@ func (m *model) View() tea.View {
 	} else {
 		lines = diff
 	}
-	if m.chat != nil {
-		lines = append(lines, m.chatView()...)
+	if cw := m.chatWidth(); cw > 0 {
+		// Claude on the right: pad the diff out to its width, then the pane.
+		sep := lipgloss.NewStyle().Foreground(t.Dim).Render("│")
+		chat := m.chatView(cw, h)
+		lw := m.width - cw - 1
+		for i := range lines {
+			l := ansi.Truncate(lines[i], lw, "")
+			lines[i] = l + strings.Repeat(" ", max(0, lw-ansi.StringWidth(l))) + sep + chat[i]
+		}
+	} else if m.chat != nil {
+		lines = append(lines, m.chatView(m.width, m.chatHeight())...)
 	}
 
 	// Footer.
