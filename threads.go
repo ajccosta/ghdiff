@@ -369,7 +369,7 @@ func (m *model) threadHints() string {
 		return "enter posts the reply · ^O diff · esc cancel"
 	}
 	if m.thread.posting {
-		return "↑↓ scroll · esc close"
+		return "esc close"
 	}
 	other := ""
 	if len(m.threadsHere) > 1 {
@@ -383,5 +383,5 @@ func (m *model) threadHints() string {
 	if m.side {
 		layout = "s below"
 	}
-	return "a reply · " + other + "↑↓ scroll · " + view + " · " + layout + " · ^O diff · esc close"
+	return "a reply · " + other + view + " · " + layout + " · ^O diff · esc close"
 }

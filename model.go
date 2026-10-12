@@ -438,9 +438,9 @@ func (m *model) View() tea.View {
 	if m.away {
 		hints = "v select · n/p file · t tree · s side/below"
 		if m.sel.on && !m.sel.anchored {
-			hints = "↑↓ move · v start selecting · o/r open what is here · esc cancel"
+			hints = "go to the first line, then press v to start selecting · o/r open what is here · esc cancel"
 		} else if m.sel.on {
-			hints = fmt.Sprintf("%d %s selected · ↑↓ extend · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
+			hints = fmt.Sprintf("%d %s selected · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
 		}
 		hints = "^O back to Claude · " + hints
 	} else if m.thread != nil {
@@ -448,7 +448,7 @@ func (m *model) View() tea.View {
 	} else if m.chat != nil {
 		hints = m.chatHints()
 	} else if m.sel.on && !m.sel.anchored {
-		hints = "move to the first line with ↑↓, then press v to start selecting · esc cancel"
+		hints = "go to the first line, then press v to start selecting · esc cancel"
 		if n := len(m.convosAt(m.sel.file, m.sel.cursor)); n > 0 {
 			hints = fmt.Sprintf("%d Claude %s · o open · ", n, plural(n, "conversation", "conversations")) + hints
 		}
@@ -456,7 +456,7 @@ func (m *model) View() tea.View {
 			hints = fmt.Sprintf("%d review %s · r read · ", n, plural(n, "thread", "threads")) + hints
 		}
 	} else if m.sel.on {
-		hints = fmt.Sprintf("%d %s selected · ↑↓ extend · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
+		hints = fmt.Sprintf("%d %s selected · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
 	} else if m.focus == focusTree {
 		hints = "enter open · c collapse · tab diff · q quit"
 	}

@@ -647,7 +647,7 @@ func (m *model) chatHints() string {
 	case m.typing:
 		return "enter send · ^O diff · esc cancel"
 	case m.chat.busy:
-		return "↑↓ scroll · esc close (stops Claude)"
+		return "esc close (stops Claude)"
 	}
 	view := "m raw"
 	if m.raw {
@@ -665,7 +665,7 @@ func (m *model) chatHints() string {
 	if m.side {
 		layout = "s below"
 	}
-	return "a follow-up · N new · " + other + "↑↓ scroll · " + view + " · " + layout + " · " + post + "^O diff · esc close"
+	return "a follow-up · N new · " + other + view + " · " + layout + " · " + post + "^O diff · esc close"
 }
 
 // markdown renders an answer, caching it until the width or theme changes.
