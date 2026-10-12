@@ -107,3 +107,15 @@ exits at once, and `git diff --stat` / `--name-only` print as usual.
 ## Building
 
 `go build -o ghdiff .` with Go 1.27 or newer, or with Nix (below).
+
+## With Nix
+
+```
+nix profile install github:ajccosta/ghdiff
+git config --global pager.diff ghdiff
+```
+
+or `nix run github:ajccosta/ghdiff`, or the flake's `overlays.default` (adds
+`pkgs.ghdiff`). The package brings git and gh; Ask Claude needs `claude` on
+your PATH. After changing go.mod, update `vendorHash` in package.nix (set it to
+`lib.fakeHash` and build; nix prints the right one).
