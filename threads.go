@@ -358,6 +358,9 @@ func (m *model) threadView(w, h int) []string {
 }
 
 func (m *model) threadHints() string {
+	if m.typing {
+		return "enter posts the reply · esc cancel"
+	}
 	if m.thread.posting {
 		return "↑↓ scroll · esc close"
 	}

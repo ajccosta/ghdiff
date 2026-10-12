@@ -61,7 +61,7 @@ func newModel(files []*File, title string, raw []byte, t target) *model {
 func (m *model) Init() tea.Cmd { return tea.Batch(tea.RequestBackgroundColor, m.fetchThreads()) }
 
 func (m *model) treeWidth() int {
-	if !m.showTree || m.width < 60 || m.sideChat() {
+	if !m.showTree || m.width < 60 {
 		return 0
 	}
 	return min(40, max(20, m.width/4))
@@ -395,6 +395,10 @@ func (m *model) View() tea.View {
 		// Claude on the right: pad the diff out to its width, then the pane.
 		sep := lipgloss.NewStyle().Foreground(t.Dim).Render("│")
 		chat := m.paneView(cw, h)
+		if m.typing {
+			// The question is typed at the bottom of the pane, not the screen.
+			chat[len(chat)-1] = m.inputLine(cw)
+		}
 		lw := m.width - cw - 1
 		for i := range lines {
 			l := ansi.Truncate(lines[i], lw, "")
@@ -427,8 +431,8 @@ func (m *model) View() tea.View {
 	if m.flash != "" {
 		foot = lipgloss.NewStyle().Foreground(t.Accent).Render(" " + m.flash)
 	}
-	if m.paneOpen() && m.typing {
-		foot = m.inputLine()
+	if m.paneOpen() && m.typing && !m.sideChat() {
+		foot = m.inputLine(m.width)
 	}
 
 	v.Content = top + "\n" + strings.Join(lines, "\n") + "\n" + foot

@@ -34,7 +34,7 @@ lines (the old one is kept), `<` `>` switch between the conversations there,
 `↑↓` scroll, `m` switches between formatted Markdown and Claude's raw text,
 `s` moves the pane to the right of the diff (hiding the file tree) and back
 below it, remembered for next time (`s` anywhere in ghdiff, or `Tab` while
-typing a question, picks it before asking), `Esc` closes.
+typing a question, picks it before asking; the file tree stays), `Esc` closes.
 
 Conversations are saved per PR (or per local repo for `git diff`) in
 `~/.local/state/ghdiff/conversations/`, so they are there the next time the diff

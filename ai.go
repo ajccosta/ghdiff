@@ -142,9 +142,17 @@ func hasFiles(top string, files []*File) bool {
 	return false
 }
 
-// sideChat is whether the pane is right of the diff (s toggles); it needs
-// room for both, and the file tree is hidden meanwhile.
-func (m *model) sideChat() bool { return m.paneOpen() && m.side && m.width >= 80 }
+// sideChat is whether the pane is right of the diff (s toggles); with too
+// little room beside the tree for both, it goes below after all.
+func (m *model) sideChat() bool { return m.paneOpen() && m.side && m.besideTree() >= 80 }
+
+// besideTree is the width right of the file tree.
+func (m *model) besideTree() int {
+	if tw := m.treeWidth(); tw > 0 {
+		return m.width - tw - 1
+	}
+	return m.width
+}
 
 // paneOpen is whether a Claude conversation or a review thread is shown.
 func (m *model) paneOpen() bool { return m.chat != nil || m.thread != nil }
@@ -168,7 +176,8 @@ func (m *model) chatWidth() int {
 	if !m.sideChat() {
 		return 0
 	}
-	return min(max(40, m.width*2/5), m.width-40)
+	rest := m.besideTree()
+	return min(max(40, rest*2/5), rest-40)
 }
 
 // chatRows is how many lines of the conversation are on screen.
@@ -582,7 +591,7 @@ func (m *model) chatHints() string {
 	case m.consent:
 		return "y let Claude read the repo · n diff only · esc cancel"
 	case m.typing:
-		return ""
+		return "enter send · esc cancel"
 	case m.chat.busy:
 		return "↑↓ scroll · esc close (stops Claude)"
 	}
@@ -643,17 +652,11 @@ func (m *model) toggleSide() {
 	m.showCursor()
 }
 
-func (m *model) inputLine() string {
-	where := "side"
-	if m.side {
-		where = "below"
-	}
-	what := " Ask Claude "
+func (m *model) inputLine(w int) string {
+	what := " Ask Claude: "
 	if m.thread != nil {
-		what = " Reply on GitHub "
+		what = " Reply: "
 	}
-	label := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Accent).Render(what) +
-		lipgloss.NewStyle().Foreground(m.theme.Dim).Render("(tab: "+where+")") +
-		lipgloss.NewStyle().Bold(true).Foreground(m.theme.Accent).Render(": ")
-	return label + m.input.view(max(1, m.width-ansi.StringWidth(label)-1))
+	label := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Accent).Render(what)
+	return label + m.input.view(max(1, w-ansi.StringWidth(label)-1))
 }
