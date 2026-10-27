@@ -224,7 +224,7 @@ Diff
   a           ask Claude about the selection
   y           copy the selection
   o / r       open the Claude conversation / review thread on the line
-  T           review threads: on hover / in the left column / in the pane
+  T           review threads: on hover, or only with r (in the left column)
   n / p       next / previous file
   c / C       collapse the file / all files
   t / tab     hide the tree / move to it

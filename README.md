@@ -78,19 +78,19 @@ else, no gives it no tools at all.
 On a PR diff (from gh-dash, or `--pr N -R owner/repo`), the PR's review threads
 are fetched in the background and marked `◆` on their first line. Each
 comment shows with its author and date, rendered as Markdown (`m` raw). `T`
-picks where threads show, moving the one on screen there (remembered in
-`settings.json` as `threadView`):
+switches how threads show (remembered in `settings.json` as `threadView`):
 
 - `hover` (the default): a box under the `◆` while the mouse is on it (or on
-  the box), or the cursor is on that line. Clicking the box, or `r`, opens the
-  thread in the pane to reply.
-- `left`: `r` opens it in the file tree's column; `t` switches between the
-  tree and the thread.
-- `pane`: `r` opens it in the same pane as Claude (`s` side/below).
+  the box), or the cursor is on that line.
+- `left`: no box; put the cursor on the line and press `r`.
+
+Clicking the box, or `r`, opens the thread in the file tree's column, where
+`t` switches between the tree and the thread. (`"threadView": "pane"` puts
+open threads in the pane Claude uses instead; `T` skips it.)
 
 In an open thread `a` writes a reply and `Enter` posts it; `<` `>` switch
-between threads on the same lines, `Esc` closes. Outdated threads, and threads on single-commit
-diffs, are not shown, since their line numbers do not match.
+between threads on the same lines, `Esc` closes. Outdated threads, and threads
+on single-commit diffs, are not shown, since their line numbers do not match.
 
 ## With gh-dash
 

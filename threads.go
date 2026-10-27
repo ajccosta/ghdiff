@@ -396,5 +396,5 @@ func (m *model) threadHints() string {
 	if m.leftThread() {
 		layout = "t tree"
 	}
-	return "a reply · " + other + view + " · " + layout + " · T threads elsewhere · ^O diff · esc close"
+	return "a reply · " + other + view + " · " + layout + " · T box or column · ^O diff · esc close"
 }

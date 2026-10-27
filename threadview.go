@@ -7,13 +7,14 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Where review threads show (T cycles, remembered in settings.json):
+// Where review threads show (T switches, remembered in settings.json). An
+// open thread (r, or a click on the box) is in the tree's column, where t (or
+// ctrl+o) switches between the tree and the thread.
 //   - hover: a box over the diff while the mouse is on a thread's ◆ (or the
-//     box), or the cursor is on its first line; clicking it or r opens the
-//     thread in the pane to reply.
-//   - left: in the tree's column; t (or ctrl+o) switches between the tree and
-//     the thread.
-//   - pane: below or beside the diff, like a Claude conversation.
+//     box), or the cursor is on its first line.
+//   - left: no box; r opens the thread.
+//   - pane: open threads go below or beside the diff, like a Claude
+//     conversation. Only set by hand ("threadView": "pane"); T skips it.
 
 type threadMode string
 
@@ -30,10 +31,12 @@ var threadModes = []struct {
 }{
 	{threadsHover, "Review threads show when you hover their ◆"},
 	{threadsLeft, "Review threads open in the left column (t switches to the tree)"},
-	{threadsPane, "Review threads open in the pane, like Claude"},
 }
 
 func (m *model) threadMode() threadMode {
+	if m.ThreadView == threadsPane {
+		return threadsPane
+	}
 	for _, tm := range threadModes {
 		if tm.mode == m.ThreadView {
 			return tm.mode
@@ -48,14 +51,13 @@ func (m *model) cycleThreadMode() {
 	if m.thread != nil {
 		shown = nil
 	}
-	cur := m.threadMode()
+	cur, next := m.threadMode(), threadModes[0]
 	for i, tm := range threadModes {
 		if tm.mode == cur {
-			next := threadModes[(i+1)%len(threadModes)]
-			m.ThreadView, m.flash = next.mode, next.note
-			break
+			next = threadModes[(i+1)%len(threadModes)]
 		}
 	}
+	m.ThreadView, m.flash = next.mode, next.note
 	m.saveSettings()
 	switch {
 	case m.thread != nil && m.threadMode() == threadsHover:
@@ -93,7 +95,7 @@ func (m *model) diffX() int {
 
 // leftThread: the open thread is drawn in the tree's column.
 func (m *model) leftThread() bool {
-	return m.thread != nil && m.threadMode() == threadsLeft && m.width >= 60
+	return m.thread != nil && m.threadMode() != threadsPane && m.width >= 60
 }
 
 // paneShown: a pane below or beside the diff is open (not a left thread).
@@ -187,7 +189,7 @@ func (m *model) drawPopup(lines []string) {
 	}
 	h := len(lines)
 	maxBody := max(3, h/2-2)
-	hint := "click or r to reply · T threads elsewhere"
+	hint := "click or r to open and reply · T no box"
 	if len(body) > maxBody {
 		body = body[:maxBody-1]
 		hint = "… click or r to read it all"
