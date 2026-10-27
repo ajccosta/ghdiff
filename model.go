@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -43,6 +44,7 @@ type model struct {
 	drag  drag   // what the held mouse button moves
 	sizes
 	chatState
+	jump *jump // GHDIFF_GOTO: lines to open at
 }
 
 func newModel(files []*File, title string, raw []byte, t target) *model {
@@ -56,6 +58,7 @@ func newModel(files []*File, title string, raw []byte, t target) *model {
 		showTree:  len(files) > 1,
 		pin:       -1,
 		tree:      buildTree(files),
+		jump:      parseJump(os.Getenv("GHDIFF_GOTO")),
 	}
 	m.theme = themeFor(m.dark, m.truecolor)
 	m.loadConvos()
@@ -165,6 +168,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.relayout()
+		m.applyJump()
 	case tea.BackgroundColorMsg:
 		m.dark = msg.IsDark()
 		m.theme = themeFor(m.dark, m.truecolor)
@@ -196,6 +200,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.gotPosted(msg)
 	case threadsMsg:
 		m.gotThreads(msg)
+		m.applyJump()
 	case replyMsg:
 		m.gotReply(msg)
 	case tea.PasteMsg:

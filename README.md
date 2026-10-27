@@ -94,6 +94,9 @@ pager:
 `navigation: arrows`) opens that commit. gh-dash sets `GHDIFF_TITLE` for the
 title bar, and `GHDIFF_REPO`, `GHDIFF_PR`, `GHDIFF_COMMIT` and `GHDIFF_REPO_PATH`
 (its `repoPaths` entry) so Ask Claude knows the PR and can read the local clone.
+Clicking a review comment's `path#L12` on the Activity tab also sets
+`GHDIFF_GOTO=path:RIGHT|LEFT:start:end`: ghdiff opens at those lines, showing
+the review thread there, or selecting the lines when there is none.
 
 ## As git's diff pager
 

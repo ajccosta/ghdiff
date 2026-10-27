@@ -7,7 +7,8 @@
 //	ghdiff --pr N [-R owner/repo]    view a pull request (gh pr diff)
 //	ghdiff --commit SHA [-R owner/repo]
 //
-// --title sets the title bar (default: $GHDIFF_TITLE).
+// --title sets the title bar (default: $GHDIFF_TITLE). GHDIFF_GOTO=path:side:start:end
+// opens it at those lines, selected (see jump.go).
 package main
 
 import (
