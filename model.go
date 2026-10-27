@@ -45,6 +45,10 @@ type model struct {
 	sizes
 	chatState
 	jump *jump // GHDIFF_GOTO: lines to open at
+
+	ThreadView threadMode // where review threads show (threadview.go)
+	mouse      hover
+	pop        popup
 }
 
 func newModel(files []*File, title string, raw []byte, t target) *model {
@@ -69,7 +73,7 @@ func newModel(files []*File, title string, raw []byte, t target) *model {
 func (m *model) Init() tea.Cmd { return tea.Batch(tea.RequestBackgroundColor, m.fetchThreads()) }
 
 func (m *model) treeWidth() int {
-	if !m.showTree || m.width < 60 {
+	if (!m.showTree && !m.leftThread()) || m.width < 60 {
 		return 0
 	}
 	if m.TreeW > 0 {
@@ -191,6 +195,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		m.mouseClick(msg)
 	case tea.MouseMotionMsg:
+		mo := msg.Mouse()
+		m.mouse = hover{x: mo.X, y: mo.Y, on: true}
 		m.mouseMotion(msg)
 	case tea.MouseReleaseMsg:
 		m.mouseRelease()
@@ -219,6 +225,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.sizeKey(k) {
+				return m, nil
+			}
+			if k == "T" {
+				m.cycleThreadMode()
 				return m, nil
 			}
 		}
@@ -374,7 +384,7 @@ func (m *model) treeTop() int {
 func (m *model) View() tea.View {
 	var v tea.View
 	v.AltScreen = true
-	v.MouseMode = tea.MouseModeCellMotion
+	v.MouseMode = tea.MouseModeAllMotion // hovering shows review threads
 	if m.width == 0 {
 		return v
 	}
@@ -429,12 +439,19 @@ func (m *model) View() tea.View {
 	if tw > 0 {
 		cur := m.currentFile()
 		tt := m.treeTop()
+		var left []string
+		if m.leftThread() && !m.away {
+			left = m.leftView(tw, h)
+		}
 		sep := lipgloss.NewStyle().Foreground(t.Dim).Render("│")
 		for i := 0; i < h; i++ {
 			cell := ""
-			if ti := tt + i; ti < len(m.tree) {
+			if left != nil {
+				cell = left[i]
+			} else if ti := tt + i; ti < len(m.tree) {
 				cell = m.treeCell(m.tree[ti], tw, cur)
 			}
+			cell = ansi.Truncate(cell, tw, "")
 			pad := max(0, tw-ansi.StringWidth(cell))
 			lines[i] = cell + strings.Repeat(" ", pad) + sep + diff[i]
 		}
@@ -454,9 +471,10 @@ func (m *model) View() tea.View {
 			l := ansi.Truncate(lines[i], lw, "")
 			lines[i] = l + strings.Repeat(" ", max(0, lw-ansi.StringWidth(l))) + sep + chat[i]
 		}
-	} else if m.paneOpen() {
+	} else if m.paneShown() {
 		lines = append(lines, m.paneView(m.width, m.chatHeight())...)
 	}
+	m.drawPopup(lines[:h])
 
 	if m.help {
 		lines = m.helpView(m.width, len(lines))
@@ -469,6 +487,9 @@ func (m *model) View() tea.View {
 	}
 	if m.away {
 		hints = "^O back to Claude · s side/below · v select other lines · n/p file · t tree · q quit"
+		if m.leftThread() {
+			hints = "t or ^O back to the thread · v select · n/p file · q quit"
+		}
 		if m.sel.on && !m.sel.anchored {
 			hints = "^O back to Claude · go to the first line, then press v to start selecting · esc cancel"
 		} else if m.sel.on {
@@ -501,7 +522,7 @@ func (m *model) View() tea.View {
 	if m.flash != "" {
 		foot = lipgloss.NewStyle().Foreground(t.Accent).Render(" " + m.flash)
 	}
-	if m.paneOpen() && m.typing && !m.sideChat() && !m.away {
+	if m.paneShown() && m.typing && !m.sideChat() && !m.away {
 		foot = m.inputLine(m.width)
 	}
 

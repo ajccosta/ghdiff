@@ -31,7 +31,7 @@ const (
 func (m *model) sizeKey(k string) bool {
 	switch k {
 	case "+", "=", "-", "_":
-		if !m.paneOpen() {
+		if !m.paneShown() {
 			m.flash = "+ - resize the Claude pane, once one is open"
 			return true
 		}
@@ -81,7 +81,10 @@ func (m *model) diffRow(y int) int {
 
 // inPane: the screen cell is inside the Claude/thread pane.
 func (m *model) inPane(x, y int) bool {
-	if !m.paneOpen() {
+	if m.leftThread() && !m.away {
+		return x < m.treeWidth() && y >= 1 && y <= m.paneHeight()
+	}
+	if !m.paneShown() {
 		return false
 	}
 	if cw := m.chatWidth(); cw > 0 {
@@ -102,8 +105,11 @@ func (m *model) mouseClick(msg tea.MouseClickMsg) {
 		m.drag = dragTree
 	case cw > 0 && mo.X == m.width-cw-1 && mo.Y >= 1 && mo.Y <= m.paneHeight():
 		m.drag = dragPaneW
-	case m.paneOpen() && cw == 0 && mo.Y == m.paneHeight()+1:
+	case m.paneShown() && cw == 0 && mo.Y == m.paneHeight()+1:
 		m.drag = dragPaneH
+	case m.pop.has(mo.X, mo.Y):
+		m.focus = focusDiff
+		m.openThreads(m.pop.threads)
 	case m.inPane(mo.X, mo.Y):
 		if m.away {
 			m.backToPane()
@@ -218,6 +224,7 @@ Diff
   a           ask Claude about the selection
   y           copy the selection
   o / r       open the Claude conversation / review thread on the line
+  T           review threads: on hover / in the left column / in the pane
   n / p       next / previous file
   c / C       collapse the file / all files
   t / tab     hide the tree / move to it
@@ -237,6 +244,7 @@ Sizes
 
 Mouse
   click, drag select lines
+  hover       a commented line shows its review thread
   wheel       scroll
 
 h or ? shows this; any key closes it`

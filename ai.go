@@ -146,7 +146,7 @@ func hasFiles(top string, files []*File) bool {
 
 // sideChat is whether the pane is right of the diff (s toggles); with too
 // little room beside the tree for both, it goes below after all.
-func (m *model) sideChat() bool { return m.paneOpen() && m.side && m.besideTree() >= 80 }
+func (m *model) sideChat() bool { return m.paneShown() && m.side && m.besideTree() >= 80 }
 
 // besideTree is the width right of the file tree.
 func (m *model) besideTree() int {
@@ -168,7 +168,7 @@ func (m *model) paneView(w, h int) []string {
 }
 
 func (m *model) chatHeight() int {
-	if !m.paneOpen() || m.sideChat() {
+	if !m.paneShown() || m.sideChat() {
 		return 0
 	}
 	if m.PaneH > 0 {
@@ -663,7 +663,7 @@ func (m *model) paneLines() (file, lo, hi int) {
 // awayKey is a key pressed in the diff while the pane is open. a, o and r
 // open a pane on what is selected, and esc with nothing selected goes back.
 func (m *model) awayKey(k string) tea.Cmd {
-	if k == "esc" && !m.sel.on {
+	if (k == "esc" && !m.sel.on) || (k == "t" && m.leftThread()) {
 		m.backToPane()
 		return nil
 	}

@@ -68,12 +68,22 @@ func (m *model) applyJump() {
 		lo = hi
 	}
 	for _, t := range m.threadsAt(fi, hi) {
-		if t.lo == lo && t.hi == hi {
+		if t.lo != lo || t.hi != hi {
+			continue
+		}
+		if m.threadMode() != threadsHover {
 			m.focus = focusDiff
 			m.showThread(t)
 			m.jump = nil
 			return
 		}
+		m.jump = nil
+		// The cursor on the thread's first line shows it on hover.
+		m.sel = selection{on: true, anchored: true, file: fi, anchor: hi, cursor: lo}
+		if j.placed {
+			return
+		}
+		break
 	}
 	if j.placed {
 		return
@@ -84,7 +94,9 @@ func (m *model) applyJump() {
 		m.relayout()
 	}
 	m.focus = focusDiff
-	m.sel = selection{on: true, anchored: true, file: fi, anchor: lo, cursor: hi}
+	if !m.sel.on || m.sel.file != fi {
+		m.sel = selection{on: true, anchored: true, file: fi, anchor: lo, cursor: hi}
+	}
 	if top := m.firstRow(fi, lo); top >= 0 {
 		m.off = top - m.paneHeight()/3
 		m.clamp()

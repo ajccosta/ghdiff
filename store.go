@@ -42,7 +42,8 @@ type savedFile struct {
 // settings are ghdiff's remembered choices, in settings.json next to the
 // conversations.
 type settings struct {
-	ChatSide bool `json:"chatSide"`
+	ChatSide   bool       `json:"chatSide"`
+	ThreadView threadMode `json:"threadView,omitempty"`
 	sizes
 }
 
@@ -64,7 +65,7 @@ func settingsPath() string { return filepath.Join(stateDir(), "settings.json") }
 func (m *model) loadSettings() {
 	var s settings
 	if b, err := os.ReadFile(settingsPath()); err == nil && json.Unmarshal(b, &s) == nil {
-		m.side, m.sizes = s.ChatSide, s.sizes
+		m.side, m.sizes, m.ThreadView = s.ChatSide, s.sizes, s.ThreadView
 	}
 }
 
@@ -73,7 +74,7 @@ func (m *model) saveSettings() {
 		return
 	}
 	p := settingsPath()
-	b, _ := json.MarshalIndent(settings{ChatSide: m.side, sizes: m.sizes}, "", "  ")
+	b, _ := json.MarshalIndent(settings{ChatSide: m.side, ThreadView: m.ThreadView, sizes: m.sizes}, "", "  ")
 	os.MkdirAll(filepath.Dir(p), 0o755)
 	os.WriteFile(p, b, 0o600)
 }

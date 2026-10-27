@@ -76,11 +76,20 @@ else, no gives it no tools at all.
 ## GitHub review threads
 
 On a PR diff (from gh-dash, or `--pr N -R owner/repo`), the PR's review threads
-are fetched in the background and marked `◆` on their first line. Put the
-cursor (`v`) on one and press `r` to read it in the same pane as Claude: each
-comment with its author and date, rendered as Markdown (`m` raw). `a` writes a
-reply and `Enter` posts it; `<` `>` switch between threads on the same lines,
-`s` side/below, `Esc` closes. Outdated threads, and threads on single-commit
+are fetched in the background and marked `◆` on their first line. Each
+comment shows with its author and date, rendered as Markdown (`m` raw). `T`
+picks where threads show, moving the one on screen there (remembered in
+`settings.json` as `threadView`):
+
+- `hover` (the default): a box under the `◆` while the mouse is on it (or on
+  the box), or the cursor is on that line. Clicking the box, or `r`, opens the
+  thread in the pane to reply.
+- `left`: `r` opens it in the file tree's column; `t` switches between the
+  tree and the thread.
+- `pane`: `r` opens it in the same pane as Claude (`s` side/below).
+
+In an open thread `a` writes a reply and `Enter` posts it; `<` `>` switch
+between threads on the same lines, `Esc` closes. Outdated threads, and threads on single-commit
 diffs, are not shown, since their line numbers do not match.
 
 ## With gh-dash
@@ -95,8 +104,8 @@ pager:
 title bar, and `GHDIFF_REPO`, `GHDIFF_PR`, `GHDIFF_COMMIT` and `GHDIFF_REPO_PATH`
 (its `repoPaths` entry) so Ask Claude knows the PR and can read the local clone.
 Clicking a review comment's `path#L12` on the Activity tab also sets
-`GHDIFF_GOTO=path:RIGHT|LEFT:start:end`: ghdiff opens at those lines, showing
-the review thread there, or selecting the lines when there is none.
+`GHDIFF_GOTO=path:RIGHT|LEFT:start:end`: ghdiff opens at those lines with
+them selected, and shows the review thread there as `T` is set.
 
 ## As git's diff pager
 

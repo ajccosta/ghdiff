@@ -13,8 +13,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// The PR's review threads from GitHub, shown on their lines (◆ in the gutter)
-// and opened with r in the same pane as Claude, where a reply can be posted.
+// The PR's review threads from GitHub, shown on their lines (◆ in the gutter),
+// on hover or opened with r (where: threadview.go), where a reply can be posted.
 
 type comment struct {
 	id      int64
@@ -243,6 +243,10 @@ func (m *model) threadKey(msg tea.KeyPressMsg) tea.Cmd {
 		m.raw = !m.raw
 	case "s":
 		m.toggleSide()
+	case "t":
+		if m.leftThread() {
+			m.switchFocus()
+		}
 	case "<", ",", ">", ".":
 		d := 1
 		if k == "<" || k == "," {
@@ -311,7 +315,6 @@ func (m *model) gotReply(msg replyMsg) {
 func (m *model) threadView(w, h int) []string {
 	th := m.theme
 	t := m.thread
-	dim := lipgloss.NewStyle().Foreground(th.Dim)
 
 	title := "GitHub · " + m.shortRange(t.file, t.lo, t.hi)
 	if n := len(m.threadsHere); n > 1 {
@@ -326,30 +329,7 @@ func (m *model) threadView(w, h int) []string {
 		details = "resolved"
 	}
 	rule := m.paneRule(w, title, details, th.ModFg)
-
-	wrap := lipgloss.NewStyle().Width(w - 2)
-	var body []string
-	for i, c := range t.comments {
-		if i > 0 {
-			body = append(body, "")
-		}
-		body = append(body, lipgloss.NewStyle().Bold(true).Render(c.author)+dim.Render(" · "+c.created.Local().Format("Jan 2 15:04")))
-		if m.raw {
-			body = append(body, strings.Split(wrap.Render(c.body), "\n")...)
-		} else {
-			if c.md == "" || c.mdW != w-2 || c.mdDark != m.dark {
-				c.md, c.mdW, c.mdDark = m.renderMarkdown(c.body, w-2), w-2, m.dark
-			}
-			body = append(body, strings.Split(c.md, "\n")...)
-		}
-	}
-	switch {
-	case t.posting:
-		body = append(body, "", dim.Render("Posting reply…"))
-	case t.note != "":
-		body = append(body, "")
-		body = append(body, strings.Split(wrap.Inherit(lipgloss.NewStyle().Foreground(th.DelFg)).Render(t.note), "\n")...)
-	}
+	body := m.threadBody(t, w-2)
 
 	view := h - 1
 	t.scroll = min(max(0, t.scroll), max(0, len(body)-view))
@@ -362,6 +342,36 @@ func (m *model) threadView(w, h int) []string {
 		out = append(out, line)
 	}
 	return out
+}
+
+// threadBody is the thread's comments, and the state of a reply, w wide.
+func (m *model) threadBody(t *thread, w int) []string {
+	th := m.theme
+	dim := lipgloss.NewStyle().Foreground(th.Dim)
+	wrap := lipgloss.NewStyle().Width(w)
+	var body []string
+	for i, c := range t.comments {
+		if i > 0 {
+			body = append(body, "")
+		}
+		body = append(body, lipgloss.NewStyle().Bold(true).Render(c.author)+dim.Render(" · "+c.created.Local().Format("Jan 2 15:04")))
+		if m.raw {
+			body = append(body, strings.Split(wrap.Render(c.body), "\n")...)
+		} else {
+			if c.md == "" || c.mdW != w || c.mdDark != m.dark {
+				c.md, c.mdW, c.mdDark = m.renderMarkdown(c.body, w), w, m.dark
+			}
+			body = append(body, strings.Split(c.md, "\n")...)
+		}
+	}
+	switch {
+	case t.posting:
+		body = append(body, "", dim.Render("Posting reply…"))
+	case t.note != "":
+		body = append(body, "")
+		body = append(body, strings.Split(wrap.Inherit(lipgloss.NewStyle().Foreground(th.DelFg)).Render(t.note), "\n")...)
+	}
+	return body
 }
 
 func (m *model) threadHints() string {
@@ -383,5 +393,8 @@ func (m *model) threadHints() string {
 	if m.side {
 		layout = "s below"
 	}
-	return "a reply · " + other + view + " · " + layout + " · ^O diff · esc close"
+	if m.leftThread() {
+		layout = "t tree"
+	}
+	return "a reply · " + other + view + " · " + layout + " · T threads elsewhere · ^O diff · esc close"
 }
