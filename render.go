@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/alecthomas/chroma/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 )
@@ -17,12 +18,20 @@ type Theme struct {
 	HunkBg, HunkFg            color.Color
 	HeadBg, Dim, Accent       color.Color
 	AddFg, DelFg, ModFg       color.Color
+	Syntax                    *chroma.Style // code colours, nil for none
 }
 
-// themeFor picks colours for the background and the terminal's colour depth.
+// themeFor is the diff's colours (diffTheme) and the code's (syntax.go).
+func themeFor(dark, truecolor bool) Theme {
+	t := diffTheme(dark, truecolor)
+	t.Syntax = syntaxStyle(dark)
+	return t
+}
+
+// diffTheme picks colours for the background and the terminal's colour depth.
 // The truecolor values are GitHub's; on 256-colour terminals (Terminal.app,
 // tmux) those subtle tints would all round to grey, so stronger ones are used.
-func themeFor(dark, truecolor bool) Theme {
+func diffTheme(dark, truecolor bool) Theme {
 	c := lipgloss.Color
 	if !truecolor && dark {
 		return Theme{
@@ -194,21 +203,34 @@ func renderLine(t Theme, l Line, nw, cw, width int) []string {
 	}
 	signStyle := base.Foreground(signFg)
 
-	// Per-rune highlight flags from the byte spans.
+	// Per-rune word-change flags and code colours from the byte ranges.
 	type cell struct {
 		r  rune
 		hi bool
+		fg color.Color
 	}
 	var cells []cell
+	colors := map[chroma.TokenType]color.Color{}
 	for i, r := range l.Text {
-		hi := false
+		c := cell{r: r}
 		for _, s := range l.Spans {
 			if i >= s.From && i < s.To {
-				hi = true
+				c.hi = true
 				break
 			}
 		}
-		cells = append(cells, cell{r, hi})
+		for _, tk := range l.Syntax {
+			if i >= tk.From && i < tk.To {
+				fg, ok := colors[tk.Type]
+				if !ok {
+					fg = t.syntaxColor(tk.Type)
+					colors[tk.Type] = fg
+				}
+				c.fg = fg
+				break
+			}
+		}
+		cells = append(cells, c)
 	}
 
 	// Wrap to the content width.
@@ -240,16 +262,19 @@ func renderLine(t Theme, l Line, nw, cw, width int) []string {
 		for i := 0; i < len(ch); {
 			j := i
 			var seg strings.Builder
-			for j < len(ch) && ch[j].hi == ch[i].hi {
+			for j < len(ch) && ch[j].hi == ch[i].hi && ch[j].fg == ch[i].fg {
 				seg.WriteRune(ch[j].r)
 				used += runewidth.RuneWidth(ch[j].r)
 				j++
 			}
+			st := base
 			if ch[i].hi {
-				b.WriteString(word.Render(seg.String()))
-			} else {
-				b.WriteString(base.Render(seg.String()))
+				st = word
 			}
+			if ch[i].fg != nil {
+				st = st.Foreground(ch[i].fg)
+			}
+			b.WriteString(st.Render(seg.String()))
 			i = j
 		}
 		if pad := width - used; pad > 0 {

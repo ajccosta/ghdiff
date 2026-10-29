@@ -5,6 +5,8 @@ A terminal diff viewer laid out like GitHub's "Files changed" tab:
 - unified diff with old and new line numbers
 - the words that changed inside an edited line get a stronger background
   (`&& h->numFree() > 0` alone, not the whole line)
+- syntax highlighting (chroma, GitHub's colours), by file name; each side is
+  read as a whole, so a comment or string opened above a line still colours it
 - file tree on the left (`←` / `Tab`), sticky file headers, collapsible files
 - GitHub's colours on truecolor terminals, a stronger palette on 256-colour
   ones (Terminal.app, tmux); follows a light or dark background

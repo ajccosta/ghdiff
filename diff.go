@@ -27,6 +27,7 @@ type Line struct {
 	Text     string
 	Raw      string // Text before tabs were expanded, for copying
 	Spans    []Span
+	Syntax   []tok // token types for syntax colours (syntax.go)
 }
 
 type File struct {
@@ -170,6 +171,7 @@ func Parse(r io.Reader) []*File {
 	for _, f := range files {
 		markWordChanges(f.Lines)
 	}
+	highlight(files)
 	return files
 }
 
