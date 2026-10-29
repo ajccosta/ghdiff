@@ -187,7 +187,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if mo.Button == tea.MouseWheelUp {
 			step = -3
 		}
-		if mo.X < m.treeWidth() {
+		if m.inPane(mo.X, mo.Y) {
+			m.scrollPane(step)
+		} else if mo.X < m.treeWidth() {
 			m.moveTree(step / 3)
 		} else {
 			m.scroll(step)

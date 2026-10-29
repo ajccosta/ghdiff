@@ -93,6 +93,16 @@ func (m *model) inPane(x, y int) bool {
 	return y > m.paneHeight() && y < m.height-1
 }
 
+// scrollPane scrolls the Claude or review-thread pane by n lines, as ↑↓ do in it.
+func (m *model) scrollPane(n int) {
+	switch {
+	case m.thread != nil:
+		m.thread.scroll += n
+	case m.chat != nil:
+		m.chat.scroll += n
+	}
+}
+
 func (m *model) mouseClick(msg tea.MouseClickMsg) {
 	mo := msg.Mouse()
 	if mo.Button != tea.MouseLeft || m.help {

@@ -106,3 +106,26 @@ func TestCopyText(t *testing.T) {
 		t.Fatalf("copy = %q, want %q", got, want)
 	}
 }
+
+func TestWheelScrollsThePaneUnderThePointer(t *testing.T) {
+	m := newSelTestModel(t)
+	m.newChat([]span{{0, 1, 1}})
+	m.typing = false
+	m.chat.turns = []turn{{q: "q", a: strings.Repeat("line\n", 200)}}
+	m.relayout()
+	m.View() // clamps the scroll
+	off, scroll := m.off, m.chat.scroll
+	y := m.paneHeight() + 3 // below the diff: the pane, when it is below
+	x := 5
+	if cw := m.chatWidth(); cw > 0 {
+		x, y = m.width-2, 5
+	}
+	m.Update(tea.MouseWheelMsg{X: x, Y: y, Button: tea.MouseWheelDown})
+	if m.chat.scroll != scroll+3 || m.off != off {
+		t.Fatalf("wheel over the pane: scroll %d→%d, diff %d→%d", scroll, m.chat.scroll, off, m.off)
+	}
+	m.Update(tea.MouseWheelMsg{X: m.treeWidth() + 5, Y: 2, Button: tea.MouseWheelDown})
+	if m.chat.scroll != scroll+3 {
+		t.Fatal("wheel over the diff scrolled the pane")
+	}
+}
