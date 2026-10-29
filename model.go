@@ -42,6 +42,8 @@ type model struct {
 	flash string // a one-off note for the footer, cleared by the next key
 	help  bool   // the help pane (h or ?) is showing
 	drag  drag   // what the held mouse button moves
+	// termPress: the held mouse button was pressed over Claude Code.
+	termPress bool
 	sizes
 	chatState
 	jump *jump // GHDIFF_GOTO: lines to open at
@@ -174,6 +176,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if mm, ok := msg.(tea.MouseMsg); ok && m.toTerm(mm) {
+		m.mouse = hover{} // no hover box over Claude Code
+		return m, nil
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height

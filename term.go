@@ -100,6 +100,27 @@ func (t *term) wheel(n int) {
 	t.scroll = min(max(0, t.scroll-n), t.emu.ScrollbackLen())
 }
 
+// fullScreen is whether the program draws the whole screen itself (the
+// alternate screen, as Claude Code does): then it gets the mouse, if it asked.
+func (t *term) fullScreen() bool { return t.emu.IsAltScreen() }
+
+// mouse passes on a mouse event at cell x, y of the screen.
+func (t *term) mouse(ev tea.MouseMsg, x, y int) {
+	mo := ev.Mouse()
+	mo.X, mo.Y = x, y
+	u := uv.Mouse(mo)
+	switch ev.(type) {
+	case tea.MouseClickMsg:
+		t.emu.SendMouse(uv.MouseClickEvent(u))
+	case tea.MouseReleaseMsg:
+		t.emu.SendMouse(uv.MouseReleaseEvent(u))
+	case tea.MouseWheelMsg:
+		t.emu.SendMouse(uv.MouseWheelEvent(u))
+	case tea.MouseMotionMsg:
+		t.emu.SendMouse(uv.MouseMotionEvent(u))
+	}
+}
+
 // lines are the screen's h lines, w cells wide, from scroll lines back.
 func (t *term) lines() []string {
 	screen := strings.Split(t.emu.Render(), "\n")

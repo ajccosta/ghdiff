@@ -105,6 +105,42 @@ func (m *model) scrollPane(n int) {
 	}
 }
 
+// termOrigin is where Claude Code's screen starts: under the pane's title.
+func (m *model) termOrigin() (x, y int) {
+	if cw := m.chatWidth(); cw > 0 {
+		return m.width - cw, 2
+	}
+	return 0, m.paneHeight() + 2
+}
+
+// toTerm passes a mouse event over Claude Code's screen on to it, when it
+// draws the whole screen itself; false if the event is not for it. A release
+// goes where the press went.
+func (m *model) toTerm(ev tea.MouseMsg) bool {
+	c := m.chat
+	if c == nil || c.term == nil || !c.term.fullScreen() || m.help || m.confirmPost {
+		return false
+	}
+	mo := ev.Mouse()
+	x0, y0 := m.termOrigin()
+	x, y := mo.X-x0, mo.Y-y0
+	in := m.inPane(mo.X, mo.Y) && x >= 0 && y >= 0 && x < c.term.w && y < c.term.h
+	switch ev.(type) {
+	case tea.MouseClickMsg:
+		m.termPress = in
+	case tea.MouseReleaseMsg:
+		in, m.termPress = m.termPress, false
+	}
+	if !in {
+		return false
+	}
+	if _, click := ev.(tea.MouseClickMsg); click && m.away {
+		m.backToPane()
+	}
+	c.term.mouse(ev, x, y)
+	return true
+}
+
 func (m *model) mouseClick(msg tea.MouseClickMsg) {
 	mo := msg.Mouse()
 	if mo.Button != tea.MouseLeft || m.help {

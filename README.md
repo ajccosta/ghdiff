@@ -51,7 +51,8 @@ edit (in a worktree, see below). `Ctrl+O` switches to the diff and back. There,
 conversation. `/exit` ends it, and reopening the conversation resumes it
 (`claude --resume`). `N` starts a new conversation on the same lines (the old
 one is kept), and `<` `>` switch between the conversations there. The mouse
-wheel over the pane scrolls back through Claude Code's output. Quitting ghdiff
+works over the pane as in a terminal: the wheel scrolls Claude Code, clicks
+reach it. Quitting ghdiff
 stops Claude Code and keeps what was said.
 
 With `"claude": "print"` in `~/.local/state/ghdiff/settings.json`, `a` asks with
