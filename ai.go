@@ -32,15 +32,15 @@ type turn struct {
 }
 
 type convo struct {
-	spans    []span // the selected lines
-	turns    []turn
-	session  string
-	busy     bool
-	scroll   int
-	cancel   context.CancelFunc
-	created  time.Time
-	dir      string // where claude runs; a resumed session must run there too
-	readRepo bool   // Claude may read the local clone (dir)
+	spans   []span // the selected lines
+	turns   []turn
+	session string
+	busy    bool
+	scroll  int
+	cancel  context.CancelFunc
+	created time.Time
+	dir     string // where claude runs; a resumed session must run there too
+	access  string // what Claude may reach (access.go)
 
 	// Posting to the PR (post.go).
 	commentID int64 // the thread's first comment, once posted
@@ -55,6 +55,7 @@ type answerMsg struct {
 	text    string
 	session string
 	err     bool
+	dir     string // where claude ran
 }
 
 // target is what the diff is of, when known: from --pr/-R, or from gh-dash
@@ -95,8 +96,8 @@ type chatState struct {
 	raw         bool   // show answers as Claude wrote them, not rendered
 	side        bool   // the pane goes right of the diff, not below it
 	repo        string // local clone holding the diff's files, "" if none
-	repoOK      int    // 0 not asked yet, 1 yes, -1 no
-	consent     bool   // waiting for y/n on reading repo
+	access      string // the consent answer for new conversations, "" not asked yet
+	consent     bool   // waiting for the consent answer
 	confirmPost bool   // waiting for y/n on posting to the PR
 	pendingQ    string // the question held while asking for consent
 	away        bool   // ctrl+o: the pane stays open but keys go to the diff
@@ -282,12 +283,13 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 			return m.post()
 		}
 	case m.consent:
-		switch k {
-		case "y", "n":
-			m.repoOK = map[string]int{"y": 1, "n": -1}[k]
-			m.consent = false
-			return m.ask(m.pendingQ)
-		case "esc":
+		for _, a := range accesses {
+			if k == a.key {
+				m.access, m.consent = a.id, false
+				return m.ask(m.pendingQ)
+			}
+		}
+		if k == "esc" {
 			m.consent = false
 		}
 	case m.typing:
@@ -366,13 +368,13 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// ask sends a question, asking first whether Claude may read the local repo.
+// ask sends a question, asking first how far Claude may reach in the local repo.
 func (m *model) ask(q string) tea.Cmd {
 	c := m.chat
 	if c == nil || c.busy {
 		return nil
 	}
-	if m.repo != "" && m.repoOK == 0 && c.session == "" {
+	if m.repo != "" && m.access == "" && c.session == "" {
 		m.consent, m.pendingQ = true, q
 		return nil
 	}
@@ -380,22 +382,13 @@ func (m *model) ask(q string) tea.Cmd {
 	c.busy = true
 	c.scroll = 1 << 30 // to the end; clamped when drawn
 
-	// A new conversation takes the repo answer; a resumed one keeps its own.
+	// A new conversation takes the consent answer; a resumed one keeps its own.
 	if c.session == "" {
-		c.readRepo = m.repoOK == 1
-		c.dir = filepath.Join(os.TempDir(), "ghdiff-claude")
-		if c.readRepo {
-			c.dir = m.repo
-		}
+		c.access = accessFor(m.access).id
 	}
+	a := accessFor(c.access)
 	dir := c.dir
-	args := []string{"-p", "--output-format", "json", "--strict-mcp-config"}
-	if c.readRepo {
-		args = append(args, "--tools", "Read,Grep,Glob", "--allowedTools", "Read,Grep,Glob")
-	} else {
-		os.MkdirAll(dir, 0o755)
-		args = append(args, "--tools", "")
-	}
+	args := append([]string{"-p", "--output-format", "json", "--strict-mcp-config", "--tools", a.tools}, a.args...)
 	prompt := q
 	if c.session != "" {
 		args = append(args, "--resume", c.session)
@@ -406,6 +399,12 @@ func (m *model) ask(q string) tea.Cmd {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 	return func() tea.Msg {
+		if dir == "" {
+			var err error
+			if dir, err = a.dir(m, c); err != nil {
+				return answerMsg{c: c, text: err.Error(), err: true}
+			}
+		}
 		cmd := exec.CommandContext(ctx, "claude", args...)
 		cmd.Dir = dir
 		cmd.Stdin = strings.NewReader(prompt)
@@ -425,9 +424,9 @@ func (m *model) ask(q string) tea.Cmd {
 			if ctx.Err() != nil {
 				msg = "cancelled"
 			}
-			return answerMsg{c: c, text: msg, err: true}
+			return answerMsg{c: c, text: msg, err: true, dir: dir}
 		}
-		return answerMsg{c: c, text: res.Result, session: res.SessionID, err: res.IsError}
+		return answerMsg{c: c, text: res.Result, session: res.SessionID, err: res.IsError, dir: dir}
 	}
 }
 
@@ -436,6 +435,9 @@ func (m *model) gotAnswer(msg answerMsg) {
 	c.busy, c.cancel = false, nil
 	if msg.session != "" {
 		c.session = msg.session
+	}
+	if msg.dir != "" {
+		c.dir = msg.dir
 	}
 	if n := len(c.turns); n > 0 {
 		// Tabs would be dropped when drawn; Go code is all tabs.
@@ -458,12 +460,7 @@ func (m *model) firstPrompt(c *convo, q string) string {
 	if t := m.target.String(); t != "" {
 		fmt.Fprintf(&b, "The diff is of %s on GitHub.\n", t)
 	}
-	if c.readRepo {
-		b.WriteString("The working directory is a clone of the repository the diff applies to; you may read files there " +
-			"for context. It may not be checked out at the diff's commit, so trust the diff where they differ.\n")
-	} else {
-		b.WriteString("You only have the diff below; you cannot read other files.\n")
-	}
+	b.WriteString(accessFor(c.access).prompt)
 	for _, sp := range c.spans {
 		f := m.files[sp.file]
 		fmt.Fprintf(&b, "\nFile: %s\n", f.Path())
@@ -562,10 +559,11 @@ func (m *model) chatView(w, h int) []string {
 	c := m.chat
 	dim := lipgloss.NewStyle().Foreground(t.Dim)
 
-	ctx := "diff only"
-	if c.readRepo || (c.session == "" && m.repoOK == 1) {
-		ctx = "reading " + filepath.Base(m.repo)
+	id := c.access
+	if c.session == "" && len(c.turns) == 0 {
+		id = m.access // not asked yet: what it will be
 	}
+	ctx := accessFor(id).label(m, c)
 	title := "Claude · " + m.spansLabel(c.spans)
 	if n := len(m.here); n > 1 {
 		for i, o := range m.here {
@@ -623,7 +621,7 @@ func (m *model) chatView(w, h int) []string {
 	}
 	if m.consent {
 		body = append(body, "", lipgloss.NewStyle().Bold(true).Render(
-			fmt.Sprintf("Let Claude read %s (read-only: Read, Grep, Glob)? y/n", m.repo)))
+			fmt.Sprintf("How may Claude use %s? %s", m.repo, consentHints())))
 	}
 
 	view := h - 1
@@ -695,7 +693,7 @@ func (m *model) chatHints() string {
 	case m.confirmPost:
 		return "y post · any other key cancels"
 	case m.consent:
-		return "y let Claude read the repo · n diff only · esc cancel"
+		return consentHints()
 	case m.typing:
 		return "enter send · ^O diff · esc cancel"
 	case m.chat.busy:

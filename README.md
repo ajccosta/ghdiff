@@ -79,9 +79,19 @@ questions and answers. This needs the PR: open the diff from gh-dash, or use
 
 Claude gets the selected lines, their hunk and the whole diff. When there is a
 local clone with the diff's files (gh-dash's `repoPaths`, or the repo ghdiff
-runs in, if its remote is the PR's repo), the first question asks whether
-Claude may read that repo; yes gives it Read, Grep and Glob there and nothing
-else, no gives it no tools at all.
+runs in, if its remote is the PR's repo), the first question asks how Claude
+may use that repo (the answer holds for the rest of the session):
+
+- `y`: read it, with Read, Grep and Glob there and nothing else.
+- `w`: work in a new git worktree of it, under
+  `~/.local/state/ghdiff/worktrees/`, never your own checkout. It starts
+  detached at the PR's head (fetched), or the commit, else the clone's `HEAD`.
+  Claude may edit and write files there (`claude --restricted` keeps them in the
+  worktree) and run git (switch branches or commits, commit a fix), but not
+  `git -C` elsewhere or `git push`. The pane's title shows the worktree's path;
+  each conversation gets its own and keeps it. Remove one with
+  `git worktree remove PATH`.
+- `n`: no tools at all, only the diff.
 
 ## GitHub review threads
 

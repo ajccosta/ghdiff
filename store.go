@@ -35,7 +35,8 @@ type savedConvo struct {
 	Turns      []savedTurn  `json:"turns"`
 	Session    string       `json:"session,omitempty"`
 	Dir        string       `json:"dir,omitempty"` // where claude ran; resume needs it
-	ReadRepo   bool         `json:"readRepo,omitempty"`
+	Access     string       `json:"access,omitempty"`
+	ReadRepo   bool         `json:"readRepo,omitempty"` // before access: true is "read"
 	CommentID  int64        `json:"commentId,omitempty"`
 	Posted     int          `json:"posted,omitempty"`
 	Created    time.Time    `json:"created"`
@@ -142,8 +143,11 @@ func (m *model) loadConvos() {
 			m.unplaced = append(m.unplaced, s)
 			continue
 		}
+		if s.Access == "" && s.ReadRepo {
+			s.Access = "read"
+		}
 		c := &convo{spans: spans, session: s.Session,
-			dir: s.Dir, readRepo: s.ReadRepo, commentID: s.CommentID, posted: s.Posted, created: s.Created}
+			dir: s.Dir, access: s.Access, commentID: s.CommentID, posted: s.Posted, created: s.Created}
 		for _, t := range s.Turns {
 			c.turns = append(c.turns, turn{q: t.Q, a: t.A, err: t.Err})
 		}
@@ -187,7 +191,7 @@ func (m *model) saveConvos() {
 		if len(c.turns) == 0 {
 			continue
 		}
-		s := savedConvo{Session: c.session, Dir: c.dir, ReadRepo: c.readRepo,
+		s := savedConvo{Session: c.session, Dir: c.dir, Access: c.access,
 			CommentID: c.commentID, Posted: c.posted, Created: c.created}
 		for i, sp := range c.spans {
 			f := m.files[sp.file]
