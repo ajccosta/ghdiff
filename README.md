@@ -138,6 +138,14 @@ Clicking a review comment's `path#L12` on the Activity tab also sets
 `GHDIFF_GOTO=path:RIGHT|LEFT:start:end`: ghdiff opens at those lines with
 them selected, and shows the review thread there as `T` is set.
 
+Opened from gh-dash, the left pane also has the PR's commits: `Tab` goes from
+the diff to Files, then to Commits, then back (or click their names on top).
+`↑↓` and `Enter` (or a click) show a commit's diff in place of the PR's, and
+"All commits" (when there is more than one) the whole PR again. The diffs are
+fetched once each. Claude conversations follow their lines into the new diff,
+a running Claude Code with them; one whose lines are not in it stops, and
+resumes when it is opened again.
+
 ## As git's diff pager
 
 ```

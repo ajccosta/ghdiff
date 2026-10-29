@@ -54,6 +54,7 @@ func main() {
 	tgt := target{repo: os.Getenv("GHDIFF_REPO"), commit: os.Getenv("GHDIFF_COMMIT"),
 		repoPath: os.Getenv("GHDIFF_REPO_PATH")}
 	tgt.pr, _ = strconv.Atoi(os.Getenv("GHDIFF_PR"))
+	tgt.dash = tgt.repo != "" && tgt.pr > 0
 
 	// Flags that may appear anywhere before the mode.
 	for len(args) >= 2 && (args[0] == "--title" || args[0] == "-R") {

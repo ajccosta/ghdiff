@@ -71,6 +71,7 @@ type target struct {
 	pr       int
 	commit   string
 	repoPath string // local clone, from gh-dash's repoPaths
+	dash     bool   // gh-dash opened it (GHDIFF_PR): its commits can be shown
 }
 
 func (t target) String() string {

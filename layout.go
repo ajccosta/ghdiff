@@ -141,11 +141,11 @@ func (m *model) toTerm(ev tea.MouseMsg) bool {
 	return true
 }
 
-func (m *model) mouseClick(msg tea.MouseClickMsg) {
+func (m *model) mouseClick(msg tea.MouseClickMsg) tea.Cmd {
 	mo := msg.Mouse()
 	if mo.Button != tea.MouseLeft || m.help {
 		m.help = false
-		return
+		return nil
 	}
 	tw, cw := m.treeWidth(), m.chatWidth()
 	switch {
@@ -162,22 +162,21 @@ func (m *model) mouseClick(msg tea.MouseClickMsg) {
 			m.backToPane()
 		}
 	case mo.X < tw:
-		if i := m.treeTop() + mo.Y - 1; mo.Y >= 1 && i < len(m.tree) && m.tree[i].file >= 0 {
-			m.treeSel = m.tree[i].file
-			m.jumpTo(m.treeSel)
+		if mo.Y >= 1 {
+			return m.leftClick(mo.X, mo.Y-1)
 		}
 	default:
 		if fi := m.headerAt(mo.Y); fi >= 0 {
 			m.clickHeader(fi, mo.X)
-			return
+			return nil
 		}
 		r := m.diffRow(mo.Y)
 		if r < 0 || !m.codeRow(r) || m.consent || m.confirmPost {
-			return
+			return nil
 		}
 		if ns, _ := m.markUnder(mo.X, mo.Y); len(ns) > 0 && mo.Mod == 0 {
 			m.openNote(ns[len(ns)-1], ns) // a click on ◆ or ● opens it
-			return
+			return nil
 		}
 		if m.paneOpen() && !m.away {
 			m.switchFocus() // clicking the diff is like ctrl+o
@@ -191,6 +190,7 @@ func (m *model) mouseClick(msg tea.MouseClickMsg) {
 		m.sel.kept = kept
 		m.drag = dragSel
 	}
+	return nil
 }
 
 // headerAt is the file whose header is at screen row y (the sticky one at
@@ -270,7 +270,7 @@ Diff
   T           review threads: on hover, or only with r (in the left column)
   n / p       next / previous file
   c / C       collapse the file / all files
-  t / tab     hide the tree / move to it
+  t / tab     hide the left pane / move to it (tab again: the next one)
   s           Claude pane beside or below the diff
   q           quit
 

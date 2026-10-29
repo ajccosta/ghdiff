@@ -29,9 +29,10 @@ type model struct {
 	theme         Theme
 
 	showTree bool
-	focus    focus
-	treeSel  int // index into files
-	pin      int // the file n/p/the tree jumped to when the view could not scroll to it, or -1
+	focus    focus // focusTree: the left pane has the keys
+	left     int   // which left pane shows (leftpane.go)
+	treeSel  int   // index into files
+	pin      int   // the file n/p/the tree jumped to when the view could not scroll to it, or -1
 
 	rows   []row
 	starts []int
@@ -46,6 +47,7 @@ type model struct {
 	termPress bool
 	sizes
 	chatState
+	commitsState
 	jump *jump // GHDIFF_GOTO: lines to open at
 
 	ThreadView threadMode // where review threads show (threadview.go)
@@ -62,7 +64,7 @@ func newModel(files []*File, title string, raw []byte, t target) *model {
 		collapsed: map[int]bool{},
 		dark:      true,
 		truecolor: true,
-		showTree:  len(files) > 1,
+		showTree:  len(files) > 1 || t.dash,
 		pin:       -1,
 		tree:      buildTree(files),
 		jump:      parseJump(os.Getenv("GHDIFF_GOTO")),
@@ -73,7 +75,9 @@ func newModel(files []*File, title string, raw []byte, t target) *model {
 	return m
 }
 
-func (m *model) Init() tea.Cmd { return tea.Batch(tea.RequestBackgroundColor, m.fetchThreads()) }
+func (m *model) Init() tea.Cmd {
+	return tea.Batch(tea.RequestBackgroundColor, m.fetchThreads(), m.fetchCommits())
+}
 
 func (m *model) treeWidth() int {
 	if (!m.showTree && !m.leftThread()) || m.width < 60 {
@@ -202,12 +206,12 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.inPane(mo.X, mo.Y) {
 			m.scrollPane(step)
 		} else if mo.X < m.treeWidth() {
-			m.moveTree(step / 3)
+			m.leftPane().wheel(m, step/3)
 		} else {
 			m.scroll(step)
 		}
 	case tea.MouseClickMsg:
-		m.mouseClick(msg)
+		return m, m.mouseClick(msg)
 	case tea.MouseMotionMsg:
 		mo := msg.Mouse()
 		m.mouse = hover{x: mo.X, y: mo.Y, on: true}
@@ -218,6 +222,10 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.gotAnswer(msg)
 	case postedMsg:
 		m.gotPosted(msg)
+	case commitsMsg:
+		m.gotCommits(msg)
+	case diffMsg:
+		return m, m.gotDiff(msg)
 	case threadsMsg:
 		m.gotThreads(msg)
 		m.applyJump()
@@ -286,11 +294,6 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *model) moveTree(d int) {
-	m.treeSel = min(max(0, m.treeSel+d), len(m.files)-1)
-	m.jumpTo(m.treeSel)
-}
-
 func (m *model) key(k string) tea.Cmd {
 	page := m.paneHeight()
 	m.flash = ""
@@ -304,11 +307,7 @@ func (m *model) key(k string) tea.Cmd {
 		return tea.Quit
 	case "tab":
 		if m.treeWidth() > 0 {
-			if m.focus == focusTree {
-				m.focus = focusDiff
-			} else {
-				m.focus, m.treeSel = focusTree, m.currentFile()
-			}
+			m.nextFocus()
 		}
 		return nil
 	case "s":
@@ -336,7 +335,7 @@ func (m *model) key(k string) tea.Cmd {
 		return nil
 	case "c", "x":
 		fi := m.currentFile()
-		if m.focus == focusTree {
+		if m.focus == focusTree && m.left == 0 {
 			fi = m.treeSel
 		}
 		m.collapsed[fi] = !m.collapsed[fi]
@@ -353,20 +352,7 @@ func (m *model) key(k string) tea.Cmd {
 	}
 
 	if m.focus == focusTree {
-		switch k {
-		case "up", "k":
-			m.moveTree(-1)
-		case "down", "j":
-			m.moveTree(1)
-		case "home", "g":
-			m.moveTree(-len(m.files))
-		case "end", "G":
-			m.moveTree(len(m.files))
-		case "right", "l", "enter":
-			m.jumpTo(m.treeSel)
-			m.focus = focusDiff
-		}
-		return nil
+		return m.leftPane().key(m, k)
 	}
 
 	switch k {
@@ -391,6 +377,9 @@ func (m *model) key(k string) tea.Cmd {
 	case "left":
 		if m.treeWidth() > 0 {
 			m.focus, m.treeSel = focusTree, m.currentFile()
+			if !m.leftPane().avail(m) {
+				m.left = 0
+			}
 		}
 	}
 	return nil
@@ -403,18 +392,6 @@ func anyFalse(c map[int]bool) bool {
 		}
 	}
 	return false
-}
-
-// treeTop is the first tree row on screen, chosen so the selection is visible.
-func (m *model) treeTop() int {
-	sel := 0
-	for i, r := range m.tree {
-		if r.file == m.treeSel {
-			sel = i
-		}
-	}
-	h := m.paneHeight()
-	return min(max(0, sel-h/2), max(0, len(m.tree)-h))
 }
 
 func (m *model) View() tea.View {
@@ -438,12 +415,14 @@ func (m *model) View() tea.View {
 	if title == "" {
 		title = "diff"
 	}
-	left := bar.Bold(true).Render(" "+title+" ") +
-		bar.Foreground(t.Dim).Render(fmt.Sprintf(" %d %s changed ", len(m.files), plural(len(m.files), "file", "files")))
 	right := counts(t, adds, dels, bar) + bar.Render(" ")
 	if len(m.files) > 0 {
 		right = bar.Foreground(t.Dim).Render(fmt.Sprintf("file %d/%d  ", m.currentFile()+1, len(m.files))) + right
 	}
+	changed := fmt.Sprintf(" %d %s changed ", len(m.files), plural(len(m.files), "file", "files"))
+	// A long title (a commit's) gives way to the counts.
+	title = ansi.Truncate(title, max(10, m.width-ansi.StringWidth(right)-len(changed)-3), "…")
+	left := bar.Bold(true).Render(" "+title+" ") + bar.Foreground(t.Dim).Render(changed)
 	gap := max(0, m.width-ansi.StringWidth(left)-ansi.StringWidth(right))
 	top := ansi.Truncate(left+bar.Render(strings.Repeat(" ", gap))+right, m.width, "")
 
@@ -473,21 +452,13 @@ func (m *model) View() tea.View {
 	tw := m.treeWidth()
 	lines := make([]string, h)
 	if tw > 0 {
-		cur := m.currentFile()
-		tt := m.treeTop()
-		var left []string
+		left := m.leftLines(tw, h)
 		if m.leftThread() && !m.away {
 			left = m.leftView(tw, h)
 		}
 		sep := lipgloss.NewStyle().Foreground(t.Dim).Render("│")
 		for i := 0; i < h; i++ {
-			cell := ""
-			if left != nil {
-				cell = left[i]
-			} else if ti := tt + i; ti < len(m.tree) {
-				cell = m.treeCell(m.tree[ti], tw, cur)
-			}
-			cell = ansi.Truncate(cell, tw, "")
+			cell := ansi.Truncate(left[i], tw, "")
 			pad := max(0, tw-ansi.StringWidth(cell))
 			lines[i] = cell + strings.Repeat(" ", pad) + sep + diff[i]
 		}
@@ -543,8 +514,10 @@ func (m *model) View() tea.View {
 				hints = fmt.Sprintf("%d review %s · r read · ", n, plural(n, "thread", "threads")) + hints
 			}
 		}
+	} else if m.focus == focusTree && m.leftPane().name == "Files" {
+		hints = "enter open · c collapse · tab next pane · q quit"
 	} else if m.focus == focusTree {
-		hints = "enter open · c collapse · tab diff · q quit"
+		hints = "↑↓ choose · enter show its diff · tab next pane · q quit"
 	}
 	if !m.away && m.chat == nil && m.thread == nil && !m.sel.on && m.focus == focusDiff {
 		hints += " · h help"
