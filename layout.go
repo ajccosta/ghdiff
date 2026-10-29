@@ -118,8 +118,7 @@ func (m *model) mouseClick(msg tea.MouseClickMsg) {
 	case m.paneShown() && cw == 0 && mo.Y == m.paneHeight()+1:
 		m.drag = dragPaneH
 	case m.pop.has(mo.X, mo.Y):
-		m.focus = focusDiff
-		m.openThreads(m.pop.threads)
+		m.openNote(m.pop.noteAt(mo.Y), m.pop.notes)
 	case m.inPane(mo.X, mo.Y):
 		if m.away {
 			m.backToPane()
@@ -136,6 +135,10 @@ func (m *model) mouseClick(msg tea.MouseClickMsg) {
 		}
 		r := m.diffRow(mo.Y)
 		if r < 0 || !m.codeRow(r) || m.consent || m.confirmPost {
+			return
+		}
+		if ns, _ := m.markUnder(mo.X, mo.Y); len(ns) > 0 && mo.Mod == 0 {
+			m.openNote(ns[len(ns)-1], ns) // a click on ◆ or ● opens it
 			return
 		}
 		if m.paneOpen() && !m.away {

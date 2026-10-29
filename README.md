@@ -60,8 +60,11 @@ The same works in a review thread.
 Conversations are saved per PR (or per local repo for `git diff`) in
 `~/.local/state/ghdiff/conversations/`, so they are there the next time the diff
 is opened. Lines with a conversation get a `●` (first line) and `│` in the
-gutter; put the cursor (`v`) on one and press `o` to read or continue it. They
-follow their lines by content, so they stay put when other lines move.
+gutter, like a review comment but kept only in ghdiff (it goes to the PR only
+if you press `P`). Hovering the `●` shows the conversation in a box, as for a
+review thread's `◆`; clicking the `●` or the box, or `o` with the cursor (`v`)
+on the line, reopens it to read or continue. They follow their lines by
+content, so they stay put when other lines move.
 
 The question prompt has the usual terminal editing keys: `Ctrl+A`/`Ctrl+E`
 (start/end), `←→`, `Option+←→` or `Alt+B`/`Alt+F` (by word), `Ctrl+W` and
@@ -87,11 +90,11 @@ are fetched in the background and marked `◆` on their first line. Each
 comment shows with its author and date, rendered as Markdown (`m` raw). `T`
 switches how threads show (remembered in `settings.json` as `threadView`):
 
-- `hover` (the default): a box under the `◆` while the mouse is on it (or on
-  the box), or the cursor is on that line.
+- `hover` (the default): a box under the `◆` (and a conversation's `●`) while
+  the mouse is on it (or on the box), or the cursor is on that line.
 - `left`: no box; put the cursor on the line and press `r`.
 
-Clicking the box, or `r`, opens the thread in the file tree's column, where
+Clicking the `◆` or the box, or `r`, opens the thread in the file tree's column, where
 `t` switches between the tree and the thread. (`"threadView": "pane"` puts
 open threads in the pane Claude uses instead; `T` skips it.)
 

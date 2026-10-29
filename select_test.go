@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const twoFiles = `diff --git a/a.go b/a.go
@@ -127,5 +128,38 @@ func TestWheelScrollsThePaneUnderThePointer(t *testing.T) {
 	m.Update(tea.MouseWheelMsg{X: m.treeWidth() + 5, Y: 2, Button: tea.MouseWheelDown})
 	if m.chat.scroll != scroll+3 {
 		t.Fatal("wheel over the diff scrolled the pane")
+	}
+}
+
+func TestClaudeConversationIsANoteOnItsLine(t *testing.T) {
+	m := newSelTestModel(t)
+	m.newChat([]span{{0, 2, 3}})
+	c := m.chat
+	c.turns = []turn{{q: "why?", a: "because"}}
+	m.typing = false
+	m.closeChat()
+	if m.chat != nil {
+		t.Fatal("esc kept the pane open")
+	}
+	m.sel = selection{}
+	y := -1
+	for sy := 1; sy <= m.paneHeight(); sy++ {
+		if r := m.diffRow(sy); r >= 0 && m.rows[r].file == 0 && m.rows[r].line == 2 {
+			y = sy
+			break
+		}
+	}
+	m.Update(tea.MouseMotionMsg{X: m.diffX(), Y: y})
+	if v := ansi.Strip(m.View().Content); !strings.Contains(v, "Claude · ") || !strings.Contains(v, "because") {
+		t.Fatalf("hovering ● shows no box:\n%s", v)
+	}
+	m.Update(tea.MouseClickMsg{X: m.pop.x + 2, Y: m.pop.y + 1, Button: tea.MouseLeft})
+	if m.chat != c {
+		t.Fatal("clicking the box did not reopen the conversation")
+	}
+	m.closeChat()
+	m.Update(tea.MouseClickMsg{X: m.diffX(), Y: y, Button: tea.MouseLeft})
+	if m.chat != c {
+		t.Fatal("clicking ● did not reopen the conversation")
 	}
 }

@@ -29,7 +29,7 @@ var threadModes = []struct {
 	mode threadMode
 	note string
 }{
-	{threadsHover, "Review threads show when you hover their ◆"},
+	{threadsHover, "Review threads and Claude conversations show when you hover their ◆ or ●"},
 	{threadsLeft, "Review threads open in the left column (t switches to the tree)"},
 }
 
@@ -47,7 +47,12 @@ func (m *model) threadMode() threadMode {
 
 // cycleThreadMode moves to the next place, taking the thread on screen along.
 func (m *model) cycleThreadMode() {
-	shown := m.pop.threads
+	var shown []*thread
+	for _, n := range m.pop.notes {
+		if t, ok := n.(threadNote); ok {
+			shown = append(shown, t.t)
+		}
+	}
 	if m.thread != nil {
 		shown = nil
 	}
@@ -117,52 +122,75 @@ type hover struct {
 	on   bool
 }
 
-// popup is the hover box last drawn, in screen cells, and its threads.
+// popup is the hover box last drawn, in screen cells, and its notes; starts
+// are the box rows (from y) where each note begins.
 type popup struct {
 	x, y, w, h int
-	threads    []*thread
+	notes      []note
+	starts     []int
 }
 
 func (p popup) has(x, y int) bool {
-	return len(p.threads) > 0 && x >= p.x && x < p.x+p.w && y >= p.y && y < p.y+p.h
+	return len(p.notes) > 0 && x >= p.x && x < p.x+p.w && y >= p.y && y < p.y+p.h
 }
 
-// hoverThreads are the threads to show in the box, and the diff row to put
-// it under: the line under the mouse, else the cursor's.
-func (m *model) hoverThreads() ([]*thread, int) {
+// noteAt is the note drawn on screen row y of the box.
+func (p popup) noteAt(y int) note {
+	n := p.notes[0]
+	for i, s := range p.starts {
+		if y-p.y >= s {
+			n = p.notes[i]
+		}
+	}
+	return n
+}
+
+// hoverNotes are the notes to show in the box, and the diff row to put it
+// under: the line under the mouse, else the cursor's.
+func (m *model) hoverNotes() ([]note, int) {
 	if m.threadMode() != threadsHover || m.paneOpen() || m.help || m.consent || m.confirmPost {
 		return nil, -1
 	}
 	if m.mouse.on && m.pop.has(m.mouse.x, m.mouse.y) {
-		return m.pop.threads, m.pop.anchor(m)
+		return m.pop.notes, m.pop.anchor(m)
 	}
-	if m.mouse.on && m.mouse.x == m.diffX() {
-		if r := m.diffRow(m.mouse.y); r >= 0 && m.rows[r].line >= 0 && m.firstRow(m.rows[r].file, m.rows[r].line) == r {
-			if ts := m.startsThread(m.rows[r].file, m.rows[r].line); len(ts) > 0 {
-				return ts, m.lastRow(m.rows[r].file, m.rows[r].line)
-			}
+	if m.mouse.on {
+		if ns, r := m.markUnder(m.mouse.x, m.mouse.y); len(ns) > 0 {
+			return ns, r
 		}
 	}
-	if m.sel.on && m.focus == focusDiff {
-		if c := m.sel.cursor; len(m.startsThread(c.file, c.line)) > 0 {
-			return m.startsThread(c.file, c.line), m.lastRow(c.file, c.line)
+	if m.sel.on && m.focus == focusDiff && !m.sel.anchored {
+		if c := m.sel.cursor; len(m.notesAt(c.file, c.line)) > 0 {
+			return m.notesAt(c.file, c.line), m.lastRow(c.file, c.line)
 		}
 	}
 	return nil, -1
 }
 
+// markUnder are the notes of the ◆ or ● at screen cell (x, y), and the last
+// diff row of their line.
+func (m *model) markUnder(x, y int) ([]note, int) {
+	if x != m.diffX() {
+		return nil, -1
+	}
+	r := m.diffRow(y)
+	if r < 0 || m.rows[r].line < 0 || m.firstRow(m.rows[r].file, m.rows[r].line) != r {
+		return nil, -1
+	}
+	return m.notesAt(m.rows[r].file, m.rows[r].line), m.lastRow(m.rows[r].file, m.rows[r].line)
+}
+
 // anchor is the diff row the box hangs from, so it stays put while the mouse
 // is on it.
 func (p popup) anchor(m *model) int {
-	t := p.threads[0]
-	return m.lastRow(t.file, t.lo)
+	return m.lastRow(p.notes[0].at())
 }
 
 // drawPopup lays the hover box over the diff pane's lines (screen rows 1..h).
 func (m *model) drawPopup(lines []string) {
-	ts, row := m.hoverThreads() // before forgetting the last box: the mouse may be on it
+	ns, row := m.hoverNotes() // before forgetting the last box: the mouse may be on it
 	m.pop = popup{}
-	if len(ts) == 0 || row < 0 {
+	if len(ns) == 0 || row < 0 {
 		return
 	}
 	x0 := m.diffX()
@@ -176,23 +204,21 @@ func (m *model) drawPopup(lines []string) {
 	dim := lipgloss.NewStyle().Foreground(th.Dim)
 
 	var body []string
-	for i, t := range ts {
+	var starts []int
+	for i, n := range ns {
 		if i > 0 {
 			body = append(body, "")
 		}
-		title := "GitHub · " + m.shortRange(t.file, t.lo, t.hi)
-		if t.resolved {
-			title += " · resolved"
-		}
-		body = append(body, lipgloss.NewStyle().Foreground(th.ModFg).Bold(true).Render(title))
-		body = append(body, m.threadBody(t, inner)...)
+		starts = append(starts, 1+len(body)) // under the top border
+		body = append(body, lipgloss.NewStyle().Foreground(th.ModFg).Bold(true).Render(n.title(m)))
+		body = append(body, n.body(m, inner)...)
 	}
 	h := len(lines)
 	maxBody := max(3, h/2-2)
-	hint := "click or r to open and reply · T no box"
+	hint := "click to open and reply · T no box"
 	if len(body) > maxBody {
 		body = body[:maxBody-1]
-		hint = "… click or r to read it all"
+		hint = "… click to read it all"
 	}
 	body = append(body, dim.Render(hint))
 	for i := range body {
@@ -216,7 +242,7 @@ func (m *model) drawPopup(lines []string) {
 			lines[j] = overlay(lines[j], x, l, w)
 		}
 	}
-	m.pop = popup{x: x, y: top + 1, w: w, h: len(bl), threads: ts}
+	m.pop = popup{x: x, y: top + 1, w: w, h: len(bl), notes: ns, starts: starts}
 }
 
 // overlay puts s (w cells wide) over line from column x.
