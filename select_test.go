@@ -32,6 +32,7 @@ func newSelTestModel(t *testing.T) *model {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	files := Parse(strings.NewReader(twoFiles))
 	m := newModel(files, "t", []byte(twoFiles), target{})
+	m.Claude = "print"
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	return m
 }

@@ -12,12 +12,14 @@ import (
 // once, when there is a local clone) offers each level by its key; a new
 // level is one more entry.
 type access struct {
-	id     string // saved with the conversation
-	key    string // its answer to the consent question
-	hint   string // the consent question's hint for key
-	tools  string // claude --tools ("" none)
-	args   []string
-	prompt string // what the first prompt tells Claude about its directory
+	id    string   // saved with the conversation
+	key   string   // its answer to the consent question
+	hint  string   // the consent question's hint for key
+	tools string   // claude --tools ("" none)
+	args  []string // for claude -p and Claude Code
+	// printArgs only for claude -p, where nobody can answer a prompt.
+	printArgs []string
+	prompt    string // what the first prompt tells Claude about its directory
 
 	// dir makes the directory claude runs in. It runs in the background
 	// before the first question, so it may be slow (a fetch).
@@ -49,15 +51,16 @@ var accesses = []access{
 		// --restricted keeps the file tools in the worktree; Bash may only
 		// run git, and not on another directory or a remote.
 		tools: "Read,Grep,Glob,Edit,Write,Bash",
-		args: []string{"--restricted", "--permission-mode", "acceptEdits", "--permission-prompts", "none",
+		args: []string{"--restricted", "--permission-mode", "acceptEdits",
 			"--allowedTools", "Read,Grep,Glob,Bash(git:*)",
 			"--disallowedTools", "Bash(git -C:*),Bash(git --git-dir:*),Bash(git --work-tree:*),Bash(git push:*)"},
 		prompt: "The working directory is a git worktree of the repository the diff applies to, made for this " +
 			"conversation and checked out at the diff's head (detached). It is yours: you may edit and write files " +
 			"there, and run git (switch to another branch or commit, show history, commit your changes) to do what " +
 			"they ask. Stay in this directory, and say what you changed and which commits you made.\n",
-		dir:   makeWorktree,
-		label: func(_ *model, c *convo) string { return "worktree " + c.dir },
+		printArgs: []string{"--permission-prompts", "none"},
+		dir:       makeWorktree,
+		label:     func(_ *model, c *convo) string { return "worktree " + c.dir },
 	},
 }
 

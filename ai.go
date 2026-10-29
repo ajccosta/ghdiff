@@ -42,6 +42,12 @@ type convo struct {
 	dir     string // where claude runs; a resumed session must run there too
 	access  string // what Claude may reach (access.go)
 
+	// Claude Code in the pane (code.go), rather than claude -p.
+	code     bool
+	term     *term
+	starting bool
+	startErr string
+
 	// Posting to the PR (post.go).
 	commentID int64 // the thread's first comment, once posted
 	posted    int   // turns already posted
@@ -200,7 +206,7 @@ func (m *model) chatRows() int {
 
 // newChat starts a conversation on the given lines, keeping any earlier ones.
 func (m *model) newChat(spans []span) {
-	c := &convo{spans: spans, created: time.Now()}
+	c := &convo{spans: spans, created: time.Now(), code: m.claudeMode() == "code"}
 	m.convos = append(m.convos, c)
 	m.here = nil
 	for _, o := range m.convos {
@@ -209,7 +215,7 @@ func (m *model) newChat(spans []span) {
 		}
 	}
 	m.showChat(c)
-	m.typing = true
+	m.typing = !c.code // Claude Code has its own prompt
 	m.input.reset()
 }
 
@@ -223,9 +229,7 @@ func (m *model) openChats(cs []*convo) {
 // showChat puts a conversation in the pane and selects its lines.
 func (m *model) showChat(c *convo) {
 	if old := m.chat; old != nil && old != c {
-		if len(old.turns) == 0 {
-			m.dropConvo(old)
-		}
+		m.leave(old)
 		m.typing = false
 	}
 	m.thread, m.threadsHere, m.away = nil, nil, false
@@ -240,9 +244,7 @@ func (m *model) closeChat() {
 		if c.cancel != nil {
 			c.cancel()
 		}
-		if len(c.turns) == 0 {
-			m.dropConvo(c)
-		}
+		m.leave(c)
 	}
 	m.chat, m.here, m.typing, m.consent, m.away = nil, nil, false, false, false
 	m.sel.on = false
@@ -286,11 +288,17 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 		for _, a := range accesses {
 			if k == a.key {
 				m.access, m.consent = a.id, false
+				if m.chat.code {
+					return nil // ensureTerm starts it
+				}
 				return m.ask(m.pendingQ)
 			}
 		}
 		if k == "esc" {
 			m.consent = false
+			if m.chat.code {
+				m.closeChat()
+			}
 		}
 	case m.typing:
 		switch k {
@@ -344,14 +352,7 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 		case ">", ".":
 			m.switchChat(1)
 		case "P":
-			switch {
-			case m.target.repo == "" || m.target.pr == 0:
-				m.chat.postNote, m.chat.postErr = "No PR to post to: open the diff from gh-dash, or with ghdiff --pr N -R owner/repo.", true
-			case m.postBlocked() != "":
-				m.chat.postNote, m.chat.postErr = m.postBlocked(), true
-			case m.canPost():
-				m.confirmPost = true
-			}
+			m.askPost()
 			m.chat.scroll = 1 << 30
 		case "q", "ctrl+c":
 			return tea.Quit
@@ -389,6 +390,7 @@ func (m *model) ask(q string) tea.Cmd {
 	a := accessFor(c.access)
 	dir := c.dir
 	args := append([]string{"-p", "--output-format", "json", "--strict-mcp-config", "--tools", a.tools}, a.args...)
+	args = append(args, a.printArgs...)
 	prompt := q
 	if c.session != "" {
 		args = append(args, "--resume", c.session)
@@ -452,11 +454,16 @@ func (m *model) gotAnswer(msg answerMsg) {
 const maxDiffContext = 400_000
 
 func (m *model) firstPrompt(c *convo, q string) string {
-	var b strings.Builder
-	b.WriteString("You are helping someone review a code diff in a terminal diff viewer. " +
+	return "You are helping someone review a code diff in a terminal diff viewer. " +
 		"They selected some lines (maybe several ranges, in different files) and have a question about them. Answer concisely; your Markdown is rendered " +
 		"in a terminal pane about 100 columns wide, so prefer short paragraphs, lists and code blocks over " +
-		"headings and wide tables.\n")
+		"headings and wide tables.\n" + m.diffContext(c, q)
+}
+
+// diffContext is the PR, what Claude may reach, the selected lines, the
+// question (if any) and the whole diff.
+func (m *model) diffContext(c *convo, q string) string {
+	var b strings.Builder
 	if t := m.target.String(); t != "" {
 		fmt.Fprintf(&b, "The diff is of %s on GitHub.\n", t)
 	}
@@ -483,7 +490,9 @@ func (m *model) firstPrompt(c *convo, q string) string {
 			fmt.Fprintf(&b, "%5s %5s %s%s\n", lineNo(l.Old), lineNo(l.New), mark, l.Text)
 		}
 	}
-	fmt.Fprintf(&b, "\nQuestion: %s\n", q)
+	if q != "" {
+		fmt.Fprintf(&b, "\nQuestion: %s\n", q)
+	}
 	diff := ansiRe.ReplaceAll(m.diff, nil)
 	if len(diff) > maxDiffContext {
 		b.WriteString("\n(The full diff is too large to include.)\n")
@@ -565,6 +574,9 @@ func (m *model) chatView(w, h int) []string {
 	}
 	ctx := accessFor(id).label(m, c)
 	title := "Claude · " + m.spansLabel(c.spans)
+	if c.code {
+		title = "Claude Code · " + m.spansLabel(c.spans)
+	}
 	if n := len(m.here); n > 1 {
 		for i, o := range m.here {
 			if o == c {
@@ -577,6 +589,9 @@ func (m *model) chatView(w, h int) []string {
 		details += " · " + c.created.Format("Jan 2 15:04")
 	}
 	rule := m.paneRule(w, title, details, t.Accent)
+	if c.code {
+		return m.codeView(w, h, rule)
+	}
 
 	wrap := lipgloss.NewStyle().Width(w - 2)
 	var body []string
@@ -601,23 +616,8 @@ func (m *model) chatView(w, h int) []string {
 			body = append(body, strings.Split(m.markdown(&c.turns[i], w-2), "\n")...)
 		}
 	}
-	switch {
-	case m.confirmPost:
-		what := "this conversation"
-		if c.posted > 0 {
-			what = "the new questions and answers, as a reply"
-		}
-		body = append(body, "", lipgloss.NewStyle().Bold(true).Render(
-			fmt.Sprintf("Post %s to %s on %s? y/n", what, m.target, m.selLabel(c))))
-	case c.posting:
-		body = append(body, "", dim.Render("Posting to GitHub…"))
-	case c.postNote != "":
-		st := dim
-		if c.postErr {
-			st = lipgloss.NewStyle().Foreground(t.DelFg)
-		}
-		body = append(body, "")
-		body = append(body, strings.Split(wrap.Inherit(st).Render(c.postNote), "\n")...)
+	if st := m.postStatus(w - 2); len(st) > 0 {
+		body = append(append(body, ""), st...)
 	}
 	if m.consent {
 		body = append(body, "", lipgloss.NewStyle().Bold(true).Render(
@@ -678,12 +678,61 @@ func (m *model) paneLines() []span {
 	return m.chat.spans
 }
 
+// askPost asks y/n before posting the pane's conversation to the PR, or says
+// why it cannot be posted.
+func (m *model) askPost() {
+	m.refreshTurns(m.chat)
+	switch {
+	case m.target.repo == "" || m.target.pr == 0:
+		m.chat.postNote, m.chat.postErr = "No PR to post to: open the diff from gh-dash, or with ghdiff --pr N -R owner/repo.", true
+	case m.postBlocked() != "":
+		m.chat.postNote, m.chat.postErr = m.postBlocked(), true
+	case m.canPost():
+		m.confirmPost = true
+	}
+}
+
+// postStatus is the post question, or how the last post went, w wide.
+func (m *model) postStatus(w int) []string {
+	c := m.chat
+	dim := lipgloss.NewStyle().Foreground(m.theme.Dim)
+	wrap := lipgloss.NewStyle().Width(w)
+	switch {
+	case m.confirmPost:
+		what := "this conversation"
+		if c.posted > 0 {
+			what = "the new questions and answers, as a reply"
+		}
+		return strings.Split(wrap.Bold(true).Render(
+			fmt.Sprintf("Post %s to %s on %s? y/n", what, m.target, m.selLabel(c))), "\n")
+	case c.posting:
+		return []string{dim.Render("Posting to GitHub…")}
+	case c.postNote != "":
+		st := dim
+		if c.postErr {
+			st = lipgloss.NewStyle().Foreground(m.theme.DelFg)
+		}
+		return strings.Split(wrap.Inherit(st).Render(c.postNote), "\n")
+	}
+	return nil
+}
+
 // awayKey is a key pressed in the diff while the pane is open. a, o and r
 // open a pane on what is selected, and esc with nothing selected goes back.
 func (m *model) awayKey(k string) tea.Cmd {
 	if (k == "esc" && !m.sel.on) || (k == "t" && m.leftThread()) {
 		m.backToPane()
 		return nil
+	}
+	if m.chat != nil && m.chat.code {
+		switch k {
+		case "ctrl+x":
+			m.closeChat() // Claude Code keeps running; o reopens it
+			return nil
+		case "P": // Claude Code has the keys in the pane
+			m.askPost()
+			return nil
+		}
 	}
 	return m.key(k)
 }
@@ -692,6 +741,8 @@ func (m *model) chatHints() string {
 	switch {
 	case m.confirmPost:
 		return "y post · any other key cancels"
+	case m.chat.term != nil:
+		return "Claude Code · ^O diff (there ^X hides it, still running, and P posts it) · /exit ends it"
 	case m.consent:
 		return consentHints()
 	case m.typing:

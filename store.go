@@ -36,6 +36,7 @@ type savedConvo struct {
 	Session    string       `json:"session,omitempty"`
 	Dir        string       `json:"dir,omitempty"` // where claude ran; resume needs it
 	Access     string       `json:"access,omitempty"`
+	Code       bool         `json:"code,omitempty"`     // Claude Code, Session its session
 	ReadRepo   bool         `json:"readRepo,omitempty"` // before access: true is "read"
 	CommentID  int64        `json:"commentId,omitempty"`
 	Posted     int          `json:"posted,omitempty"`
@@ -51,6 +52,7 @@ type savedFile struct {
 type settings struct {
 	ChatSide   bool       `json:"chatSide"`
 	ThreadView threadMode `json:"threadView,omitempty"`
+	Claude     string     `json:"claude,omitempty"` // "code" (default) or "print"
 	sizes
 }
 
@@ -72,7 +74,7 @@ func settingsPath() string { return filepath.Join(stateDir(), "settings.json") }
 func (m *model) loadSettings() {
 	var s settings
 	if b, err := os.ReadFile(settingsPath()); err == nil && json.Unmarshal(b, &s) == nil {
-		m.side, m.sizes, m.ThreadView = s.ChatSide, s.sizes, s.ThreadView
+		m.side, m.sizes, m.ThreadView, m.Claude = s.ChatSide, s.sizes, s.ThreadView, s.Claude
 	}
 }
 
@@ -81,7 +83,7 @@ func (m *model) saveSettings() {
 		return
 	}
 	p := settingsPath()
-	b, _ := json.MarshalIndent(settings{ChatSide: m.side, ThreadView: m.ThreadView, sizes: m.sizes}, "", "  ")
+	b, _ := json.MarshalIndent(settings{ChatSide: m.side, ThreadView: m.ThreadView, Claude: m.Claude, sizes: m.sizes}, "", "  ")
 	os.MkdirAll(filepath.Dir(p), 0o755)
 	os.WriteFile(p, b, 0o600)
 }
@@ -147,10 +149,11 @@ func (m *model) loadConvos() {
 			s.Access = "read"
 		}
 		c := &convo{spans: spans, session: s.Session,
-			dir: s.Dir, access: s.Access, commentID: s.CommentID, posted: s.Posted, created: s.Created}
+			dir: s.Dir, access: s.Access, code: s.Code, commentID: s.CommentID, posted: s.Posted, created: s.Created}
 		for _, t := range s.Turns {
 			c.turns = append(c.turns, turn{q: t.Q, a: t.A, err: t.Err})
 		}
+		m.refreshTurns(c)
 		m.convos = append(m.convos, c)
 	}
 }
@@ -191,7 +194,7 @@ func (m *model) saveConvos() {
 		if len(c.turns) == 0 {
 			continue
 		}
-		s := savedConvo{Session: c.session, Dir: c.dir, Access: c.access,
+		s := savedConvo{Session: c.session, Dir: c.dir, Access: c.access, Code: c.code,
 			CommentID: c.commentID, Posted: c.posted, Created: c.created}
 		for i, sp := range c.spans {
 			f := m.files[sp.file]

@@ -47,6 +47,7 @@ type model struct {
 	jump *jump // GHDIFF_GOTO: lines to open at
 
 	ThreadView threadMode // where review threads show (threadview.go)
+	Claude     string     // how new conversations run Claude (code.go)
 	mouse      hover
 	pop        popup
 }
@@ -168,6 +169,11 @@ func (m *model) scroll(n int) {
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	_, cmd := m.update(msg)
+	return m, tea.Batch(cmd, m.ensureTerm())
+}
+
+func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -211,12 +217,31 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyJump()
 	case replyMsg:
 		m.gotReply(msg)
+	case termStartedMsg:
+		return m, m.termStarted(msg)
+	case termOutMsg:
+		return m, msg.t.wait()
+	case termDoneMsg:
+		m.termDone(msg.t)
 	case tea.PasteMsg:
+		if m.termFocused() {
+			m.chat.term.paste(msg.Content)
+			return m, nil
+		}
 		if m.paneOpen() && m.typing {
 			m.input.insert(strings.ReplaceAll(msg.Content, "\n", " "))
 		}
 	case tea.KeyPressMsg:
 		k := msg.String()
+		if m.termFocused() {
+			if k == "ctrl+o" {
+				m.switchFocus()
+			} else {
+				m.chat.postNote = "" // it covered Claude Code's last lines
+				m.chat.term.key(msg)
+			}
+			return m, nil
+		}
 		if m.help {
 			m.help = false
 			return m, nil
@@ -237,6 +262,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if k == "ctrl+o" && m.paneOpen() && !m.consent && !m.confirmPost {
 			m.switchFocus()
 			return m, nil
+		}
+		if m.confirmPost && m.chat != nil {
+			return m, m.chatKey(msg)
 		}
 		if m.away {
 			return m, m.awayKey(msg.String())

@@ -98,6 +98,8 @@ func (m *model) scrollPane(n int) {
 	switch {
 	case m.thread != nil:
 		m.thread.scroll += n
+	case m.chat != nil && m.chat.term != nil:
+		m.chat.term.wheel(n)
 	case m.chat != nil:
 		m.chat.scroll += n
 	}

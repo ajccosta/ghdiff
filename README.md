@@ -43,14 +43,24 @@ diff). With several ranges, each starts with its place (`model.go:L12–L18`).
 
 ## Ask Claude about a selection
 
-With lines selected, `a` asks Claude Code about them (`claude -p`, your normal
-Claude login; no API key). The answer opens in a pane under the diff: `a` asks a
-follow-up in the same Claude session, `N` starts a new conversation on the same
-lines (the old one is kept), `<` `>` switch between the conversations there,
-`↑↓` or the mouse wheel over the pane scroll it, `m` switches between formatted Markdown and Claude's raw text,
-`s` moves the pane to the right of the diff and back below it, remembered for
-next time (`s` anywhere in ghdiff, or `Tab` while typing a question, picks it
-before asking), `Esc` closes.
+With lines selected, `a` opens Claude Code itself, the terminal app with your
+normal Claude login, in a pane under the diff. It is told about the diff and the
+selected lines, and is used as usual: type to it, answer its questions, let it
+edit (in a worktree, see below). `Ctrl+O` switches to the diff and back. There,
+`Ctrl+X` hides the pane while Claude Code keeps running, and `P` posts the
+conversation. `/exit` ends it, and reopening the conversation resumes it
+(`claude --resume`). `N` starts a new conversation on the same lines (the old
+one is kept), and `<` `>` switch between the conversations there. The mouse
+wheel over the pane scrolls back through Claude Code's output. Quitting ghdiff
+stops Claude Code and keeps what was said.
+
+With `"claude": "print"` in `~/.local/state/ghdiff/settings.json`, `a` asks with
+`claude -p` instead: the question is typed in ghdiff and the answer opens in
+the pane. There, `a` asks a follow-up in the same Claude session, `↑↓` or the
+wheel scroll, `m` switches between formatted Markdown and Claude's raw text,
+and `Esc` closes. Either way, `s` moves the pane to the right of the diff and
+back below it, remembered for next time (`s` anywhere in ghdiff, or `Tab`
+while typing a question, picks it before asking).
 
 `Ctrl+O` leaves the pane open and hands the keys to the diff, like switching
 panes in tmux: `s` side/below, scroll, change files, or select other lines
