@@ -79,7 +79,7 @@ func (m *model) applyJump() {
 		}
 		m.jump = nil
 		// The cursor on the thread's first line shows it on hover.
-		m.sel = selection{on: true, anchored: true, file: fi, anchor: hi, cursor: lo}
+		m.sel = spanSel(fi, hi, lo)
 		if j.placed {
 			return
 		}
@@ -94,8 +94,8 @@ func (m *model) applyJump() {
 		m.relayout()
 	}
 	m.focus = focusDiff
-	if !m.sel.on || m.sel.file != fi {
-		m.sel = selection{on: true, anchored: true, file: fi, anchor: lo, cursor: hi}
+	if !m.sel.on || m.sel.cursor.file != fi {
+		m.sel = spanSel(fi, lo, hi)
 	}
 	if top := m.firstRow(fi, lo); top >= 0 {
 		m.off = top - m.paneHeight()/3

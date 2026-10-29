@@ -105,8 +105,8 @@ func (m *model) relayout() {
 		into = m.off - m.starts[cur]
 	}
 	m.rows, m.starts = buildRows(m.theme, m.files, m.collapsed, m.diffWidth())
-	if m.sel.on && m.collapsed[m.sel.file] {
-		m.sel.on = false
+	if m.sel.on && (m.collapsed[m.sel.cursor.file] || m.collapsed[m.sel.anchor.file]) {
+		m.sel = selection{}
 	}
 	if len(m.starts) > 0 {
 		m.off = m.starts[cur] + max(0, into)
@@ -490,25 +490,23 @@ func (m *model) View() tea.View {
 		if m.leftThread() {
 			hints = "t or ^O back to the thread · v select · n/p file · q quit"
 		}
-		if m.sel.on && !m.sel.anchored {
-			hints = "^O back to Claude · go to the first line, then press v to start selecting · esc cancel"
-		} else if m.sel.on {
-			hints = fmt.Sprintf("^O back to Claude · %d %s selected · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
+		if m.sel.on {
+			hints = "^O back to Claude · " + m.selHints()
 		}
 	} else if m.thread != nil {
 		hints = m.threadHints()
 	} else if m.chat != nil {
 		hints = m.chatHints()
-	} else if m.sel.on && !m.sel.anchored {
-		hints = "go to the first line, then press v to start selecting · esc cancel"
-		if n := len(m.convosAt(m.sel.file, m.sel.cursor)); n > 0 {
-			hints = fmt.Sprintf("%d Claude %s · o open · ", n, plural(n, "conversation", "conversations")) + hints
-		}
-		if n := len(m.threadsAt(m.sel.file, m.sel.cursor)); n > 0 {
-			hints = fmt.Sprintf("%d review %s · r read · ", n, plural(n, "thread", "threads")) + hints
-		}
 	} else if m.sel.on {
-		hints = fmt.Sprintf("%d %s selected · a ask Claude · y copy · esc cancel", m.selectedCount(), plural(m.selectedCount(), "line", "lines"))
+		hints = m.selHints()
+		if c := m.sel.cursor; !m.sel.anchored {
+			if n := len(m.convosAt(c.file, c.line)); n > 0 {
+				hints = fmt.Sprintf("%d Claude %s · o open · ", n, plural(n, "conversation", "conversations")) + hints
+			}
+			if n := len(m.threadsAt(c.file, c.line)); n > 0 {
+				hints = fmt.Sprintf("%d review %s · r read · ", n, plural(n, "thread", "threads")) + hints
+			}
+		}
 	} else if m.focus == focusTree {
 		hints = "enter open · c collapse · tab diff · q quit"
 	}

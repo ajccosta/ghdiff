@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -31,15 +32,15 @@ type turn struct {
 }
 
 type convo struct {
-	file, lo, hi int // the selection: File.Lines indexes
-	turns        []turn
-	session      string
-	busy         bool
-	scroll       int
-	cancel       context.CancelFunc
-	created      time.Time
-	dir          string // where claude runs; a resumed session must run there too
-	readRepo     bool   // Claude may read the local clone (dir)
+	spans    []span // the selected lines
+	turns    []turn
+	session  string
+	busy     bool
+	scroll   int
+	cancel   context.CancelFunc
+	created  time.Time
+	dir      string // where claude runs; a resumed session must run there too
+	readRepo bool   // Claude may read the local clone (dir)
 
 	// Posting to the PR (post.go).
 	commentID int64 // the thread's first comment, once posted
@@ -197,12 +198,12 @@ func (m *model) chatRows() int {
 }
 
 // newChat starts a conversation on the given lines, keeping any earlier ones.
-func (m *model) newChat(fi, lo, hi int) {
-	c := &convo{file: fi, lo: lo, hi: hi, created: time.Now()}
+func (m *model) newChat(spans []span) {
+	c := &convo{spans: spans, created: time.Now()}
 	m.convos = append(m.convos, c)
 	m.here = nil
 	for _, o := range m.convos {
-		if o.file == fi && o.lo == lo && o.hi == hi && (len(o.turns) > 0 || o == c) {
+		if slices.Equal(o.spans, spans) && (len(o.turns) > 0 || o == c) {
 			m.here = append(m.here, o)
 		}
 	}
@@ -228,7 +229,7 @@ func (m *model) showChat(c *convo) {
 	}
 	m.thread, m.threadsHere, m.away = nil, nil, false
 	m.chat = c
-	m.sel = selection{on: true, anchored: true, file: c.file, anchor: c.lo, cursor: c.hi}
+	m.sel = spansSel(c.spans)
 	m.relayout()
 	m.showCursor()
 }
@@ -334,7 +335,7 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 			m.toggleSide()
 		case "N":
 			if !m.chat.busy {
-				m.newChat(m.chat.file, m.chat.lo, m.chat.hi)
+				m.newChat(m.chat.spans)
 			}
 		case "<", ",":
 			m.switchChat(-1)
@@ -344,6 +345,8 @@ func (m *model) chatKey(msg tea.KeyPressMsg) tea.Cmd {
 			switch {
 			case m.target.repo == "" || m.target.pr == 0:
 				m.chat.postNote, m.chat.postErr = "No PR to post to: open the diff from gh-dash, or with ghdiff --pr N -R owner/repo.", true
+			case m.postBlocked() != "":
+				m.chat.postNote, m.chat.postErr = m.postBlocked(), true
 			case m.canPost():
 				m.confirmPost = true
 			}
@@ -447,10 +450,9 @@ func (m *model) gotAnswer(msg answerMsg) {
 const maxDiffContext = 400_000
 
 func (m *model) firstPrompt(c *convo, q string) string {
-	f := m.files[c.file]
 	var b strings.Builder
 	b.WriteString("You are helping someone review a code diff in a terminal diff viewer. " +
-		"They selected some lines and have a question about them. Answer concisely; your Markdown is rendered " +
+		"They selected some lines (maybe several ranges, in different files) and have a question about them. Answer concisely; your Markdown is rendered " +
 		"in a terminal pane about 100 columns wide, so prefer short paragraphs, lists and code blocks over " +
 		"headings and wide tables.\n")
 	if t := m.target.String(); t != "" {
@@ -462,20 +464,27 @@ func (m *model) firstPrompt(c *convo, q string) string {
 	} else {
 		b.WriteString("You only have the diff below; you cannot read other files.\n")
 	}
-	fmt.Fprintf(&b, "\nFile: %s\n", f.Path())
-	for i := c.lo; i >= 0; i-- {
-		if f.Lines[i].Kind == Hunk {
-			fmt.Fprintf(&b, "Hunk: %s\n", f.Lines[i].Text)
-			break
+	for _, sp := range c.spans {
+		f := m.files[sp.file]
+		fmt.Fprintf(&b, "\nFile: %s\n", f.Path())
+		for i := sp.lo; i >= 0; i-- {
+			if f.Lines[i].Kind == Hunk {
+				fmt.Fprintf(&b, "Hunk: %s\n", f.Lines[i].Text)
+				break
+			}
 		}
-	}
-	b.WriteString("Selected lines (old and new line numbers, then +/-/space and the text):\n")
-	for _, l := range f.Lines[c.lo : c.hi+1] {
-		mark := map[LineKind]string{Add: "+", Del: "-", Ctx: " "}[l.Kind]
-		if mark == "" {
-			continue
+		b.WriteString("Selected lines (old and new line numbers, then +/-/space and the text):\n")
+		for _, l := range f.Lines[sp.lo : sp.hi+1] {
+			if l.Kind == Hunk && sp.lo < sp.hi {
+				fmt.Fprintf(&b, "Hunk: %s\n", l.Text)
+				continue
+			}
+			mark := map[LineKind]string{Add: "+", Del: "-", Ctx: " "}[l.Kind]
+			if mark == "" {
+				continue
+			}
+			fmt.Fprintf(&b, "%5s %5s %s%s\n", lineNo(l.Old), lineNo(l.New), mark, l.Text)
 		}
-		fmt.Fprintf(&b, "%5s %5s %s%s\n", lineNo(l.Old), lineNo(l.New), mark, l.Text)
 	}
 	fmt.Fprintf(&b, "\nQuestion: %s\n", q)
 	diff := ansiRe.ReplaceAll(m.diff, nil)
@@ -496,7 +505,10 @@ func lineNo(n int) string {
 }
 
 // selLabel names a selection like "model.go:L12–L18" by its new-side lines.
-func (m *model) selLabel(c *convo) string { return m.rangeLabel(c.file, c.lo, c.hi) }
+func (m *model) selLabel(c *convo) string {
+	s := c.spans[0]
+	return m.rangeLabel(s.file, s.lo, s.hi)
+}
 
 func (m *model) rangeLabel(fi, lo, hi int) string {
 	f := m.files[fi]
@@ -528,6 +540,15 @@ func (m *model) paneRule(w int, title, details string, fg color.Color) string {
 	return rule + dim.Render(strings.Repeat("─", max(0, w-ansi.StringWidth(rule)-ansi.StringWidth(right)))+right)
 }
 
+// spansLabel is shortRange's for the first range, "+ 2 more" for the rest.
+func (m *model) spansLabel(spans []span) string {
+	s := m.shortRange(spans[0].file, spans[0].lo, spans[0].hi)
+	if n := len(spans) - 1; n > 0 {
+		s += fmt.Sprintf(" + %d more", n)
+	}
+	return s
+}
+
 // shortRange is "model.go:12–18": the file's name without its folders.
 func (m *model) shortRange(fi, lo, hi int) string {
 	full := m.rangeLabel(fi, lo, hi)
@@ -545,7 +566,7 @@ func (m *model) chatView(w, h int) []string {
 	if c.readRepo || (c.session == "" && m.repoOK == 1) {
 		ctx = "reading " + filepath.Base(m.repo)
 	}
-	title := "Claude · " + m.shortRange(c.file, c.lo, c.hi)
+	title := "Claude · " + m.spansLabel(c.spans)
 	if n := len(m.here); n > 1 {
 		for i, o := range m.here {
 			if o == c {
@@ -648,16 +669,15 @@ func (m *model) switchFocus() {
 // backToPane gives the keys back to the pane, selecting its lines again.
 func (m *model) backToPane() {
 	m.away, m.focus = false, focusDiff
-	fi, lo, hi := m.paneLines()
-	m.sel = selection{on: true, anchored: true, file: fi, anchor: lo, cursor: hi}
+	m.sel = spansSel(m.paneLines())
 	m.showCursor()
 }
 
-func (m *model) paneLines() (file, lo, hi int) {
+func (m *model) paneLines() []span {
 	if t := m.thread; t != nil {
-		return t.file, t.lo, t.hi
+		return []span{{t.file, t.lo, t.hi}}
 	}
-	return m.chat.file, m.chat.lo, m.chat.hi
+	return m.chat.spans
 }
 
 // awayKey is a key pressed in the diff while the pane is open. a, o and r

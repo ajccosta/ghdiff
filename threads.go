@@ -194,7 +194,7 @@ func (m *model) showThread(t *thread) {
 	m.away = false
 	m.thread = t
 	m.typing = false
-	m.sel = selection{on: true, anchored: true, file: t.file, anchor: t.lo, cursor: t.hi}
+	m.sel = spanSel(t.file, t.lo, t.hi)
 	m.relayout()
 	m.showCursor()
 }

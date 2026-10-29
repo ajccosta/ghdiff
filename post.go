@@ -63,17 +63,34 @@ func ghSide(l Line) (string, int) {
 	return "RIGHT", l.New
 }
 
+// postBlocked is why the conversation can't be a GitHub review comment, or
+// "": a comment is on one range of lines in one hunk.
+func (m *model) postBlocked() string {
+	c := m.chat
+	if len(c.spans) > 1 {
+		return "Only a conversation on one range of lines can be posted; this one has several."
+	}
+	sp := c.spans[0]
+	for _, l := range m.files[sp.file].Lines[sp.lo : sp.hi+1] {
+		if l.Kind == Hunk {
+			return "A GitHub comment can't span hunks; these lines do."
+		}
+	}
+	return ""
+}
+
 func (m *model) post() tea.Cmd {
 	c := m.chat
 	t := m.target
-	f := m.files[c.file]
+	sp := c.spans[0]
+	f := m.files[sp.file]
 	body := m.postBody(c)
 	upTo := c.answered()
 
 	// The selection's first and last code lines.
 	var first, last Line
 	found := false
-	for _, l := range f.Lines[c.lo : c.hi+1] {
+	for _, l := range f.Lines[sp.lo : sp.hi+1] {
 		if selectable(l) {
 			if !found {
 				first, found = l, true

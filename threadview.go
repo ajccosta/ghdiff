@@ -63,7 +63,7 @@ func (m *model) cycleThreadMode() {
 	case m.thread != nil && m.threadMode() == threadsHover:
 		t := m.thread
 		m.closeThread()
-		m.sel = selection{on: true, file: t.file, anchor: t.lo, cursor: t.lo}
+		m.sel = selection{on: true, anchor: pos{t.file, t.lo}, cursor: pos{t.file, t.lo}}
 		m.showCursor()
 	case m.thread != nil:
 		m.relayout()
@@ -144,8 +144,8 @@ func (m *model) hoverThreads() ([]*thread, int) {
 		}
 	}
 	if m.sel.on && m.focus == focusDiff {
-		if ts := m.startsThread(m.sel.file, m.sel.cursor); len(ts) > 0 {
-			return ts, m.lastRow(m.sel.file, m.sel.cursor)
+		if c := m.sel.cursor; len(m.startsThread(c.file, c.line)) > 0 {
+			return m.startsThread(c.file, c.line), m.lastRow(c.file, c.line)
 		}
 	}
 	return nil, -1

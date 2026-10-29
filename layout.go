@@ -132,7 +132,12 @@ func (m *model) mouseClick(msg tea.MouseClickMsg) {
 			m.switchFocus() // clicking the diff is like ctrl+o
 		}
 		m.focus = focusDiff
-		m.sel = selection{on: true, anchored: true, file: m.rows[r].file, anchor: m.rows[r].line, cursor: m.rows[r].line}
+		var kept []span
+		if mo.Mod.Contains(tea.ModAlt) || mo.Mod.Contains(tea.ModCtrl) {
+			kept = m.selSpans() // Option- or Ctrl-click adds a range
+		}
+		m.sel = spanSel(m.rows[r].file, m.rows[r].line, m.rows[r].line)
+		m.sel.kept = kept
 		m.drag = dragSel
 	}
 }
@@ -178,7 +183,7 @@ func (m *model) mouseMotion(msg tea.MouseMotionMsg) {
 	case dragPaneH:
 		m.PaneH = m.height - 1 - mo.Y
 	case dragSel:
-		// Extend to the line under the pointer, within the hunk.
+		// Extend to the line under the pointer, across hunks and files.
 		r := m.diffRow(mo.Y)
 		if mo.Y < 1 {
 			m.scroll(-1)
@@ -187,21 +192,8 @@ func (m *model) mouseMotion(msg tea.MouseMotionMsg) {
 			m.scroll(1)
 			r = m.diffRow(m.paneHeight())
 		}
-		if r < 0 || m.rows[r].file != m.sel.file || !m.codeRow(r) {
-			return
-		}
-		to, lines := m.rows[r].line, m.files[m.sel.file].Lines
-		step := 1
-		if to < m.sel.anchor {
-			step = -1
-		}
-		for i := m.sel.anchor; i != to+step; i += step {
-			if lines[i].Kind == Hunk {
-				return
-			}
-			if selectable(lines[i]) {
-				m.sel.cursor = i
-			}
+		if r >= 0 && m.codeRow(r) {
+			m.sel.cursor = pos{m.rows[r].file, m.rows[r].line}
 		}
 		return
 	default:

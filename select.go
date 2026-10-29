@@ -10,28 +10,102 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// selection is a range of code lines in one file. The first v shows a
+// span is a range of lines in one file: File.Lines indexes lo..hi. It may
+// cross hunks; the hunk headers in it are not code and are skipped.
+type span struct{ file, lo, hi int }
+
+func (s span) covers(fi, li int) bool { return s.file == fi && li >= s.lo && li <= s.hi }
+
+// pos is a line of the diff; positions order by file, then line.
+type pos struct{ file, line int }
+
+func (p pos) before(q pos) bool { return p.file < q.file || p.file == q.file && p.line < q.line }
+
+// selection is any number of ranges of code lines. The first v shows a
 // cursor that ↑↓ move anywhere; the second v anchors it, and ↑↓ then extend
-// the range within that file.
+// the range, across hunks and files. v again keeps that range and shows the
+// cursor for the next one; a and y take them all.
 type selection struct {
 	on, anchored   bool
-	file           int
-	anchor, cursor int // indexes into File.Lines
+	anchor, cursor pos
+	kept           []span // the ranges before the current one
 }
 
-func (s selection) bounds() (int, int) {
-	return min(s.anchor, s.cursor), max(s.anchor, s.cursor)
+// spanSel selects one range, with the cursor on its last line.
+func spanSel(fi, lo, hi int) selection {
+	return selection{on: true, anchored: true, anchor: pos{fi, lo}, cursor: pos{fi, hi}}
+}
+
+// spansSel selects the ranges: the last is the current one, the others kept.
+func spansSel(spans []span) selection {
+	if len(spans) == 0 {
+		return selection{}
+	}
+	last := spans[len(spans)-1]
+	s := spanSel(last.file, last.lo, last.hi)
+	s.kept = append([]span(nil), spans[:len(spans)-1]...)
+	return s
+}
+
+// active is the current range's first and last line, in diff order.
+func (s selection) active() (pos, pos) {
+	if s.cursor.before(s.anchor) {
+		return s.cursor, s.anchor
+	}
+	return s.anchor, s.cursor
 }
 
 func (s selection) has(r row) bool {
-	if !s.on || r.file != s.file || r.line < 0 {
+	if !s.on || r.line < 0 {
 		return false
 	}
-	if !s.anchored {
-		return r.line == s.cursor
+	for _, k := range s.kept {
+		if k.covers(r.file, r.line) {
+			return true
+		}
 	}
-	lo, hi := s.bounds()
-	return r.line >= lo && r.line <= hi
+	p := pos{r.file, r.line}
+	if !s.anchored {
+		return p == s.cursor
+	}
+	lo, hi := s.active()
+	return !p.before(lo) && !hi.before(p)
+}
+
+// selSpans are the selected ranges, the current one split by file (leaving
+// out collapsed files) and each trimmed to its first and last code line.
+func (m *model) selSpans() []span {
+	if !m.sel.on {
+		return nil
+	}
+	out := append([]span(nil), m.sel.kept...)
+	if !m.sel.anchored {
+		return out
+	}
+	lo, hi := m.sel.active()
+	for fi := lo.file; fi <= hi.file; fi++ {
+		if m.collapsed[fi] {
+			continue
+		}
+		lines := m.files[fi].Lines
+		a, z := 0, len(lines)-1
+		if fi == lo.file {
+			a = lo.line
+		}
+		if fi == hi.file {
+			z = hi.line
+		}
+		for a <= z && !selectable(lines[a]) {
+			a++
+		}
+		for z >= a && !selectable(lines[z]) {
+			z--
+		}
+		if a <= z {
+			out = append(out, span{fi, a, z})
+		}
+	}
+	return out
 }
 
 func selectable(l Line) bool { return l.Kind == Ctx || l.Kind == Add || l.Kind == Del }
@@ -70,36 +144,26 @@ func (m *model) startCursor() {
 	for d := 0; d < h; d++ {
 		for _, i := range []int{mid - d, mid + d} {
 			if i > m.off && i < min(len(m.rows), m.off+h) && m.codeRow(i) {
-				r := m.rows[i]
-				m.sel = selection{on: true, file: r.file, anchor: r.line, cursor: r.line}
+				p := pos{m.rows[i].file, m.rows[i].line}
+				m.sel = selection{on: true, anchor: p, cursor: p}
 				return
 			}
 		}
 	}
 }
 
-// moveCursor steps to the next code line in d's direction: anywhere before
-// the anchor is set, within the anchored file after.
+// moveCursor steps the cursor to the next code line in d's direction, over
+// hunk headers and into the next file.
 func (m *model) moveCursor(d int) {
-	if m.sel.anchored {
-		lines := m.files[m.sel.file].Lines
-		// A GitHub comment can't span hunks, so stop at the hunk's edge.
-		for i := m.sel.cursor + d; i >= 0 && i < len(lines) && lines[i].Kind != Hunk; i += d {
-			if selectable(lines[i]) {
-				m.sel.cursor = i
-				break
-			}
-		}
-	} else {
-		i := m.firstRow(m.sel.file, m.sel.cursor)
-		if d > 0 {
-			i = m.lastRow(m.sel.file, m.sel.cursor)
-		}
-		for i += d; i >= 0 && i < len(m.rows); i += d {
-			if m.codeRow(i) {
-				m.sel.file, m.sel.cursor = m.rows[i].file, m.rows[i].line
-				break
-			}
+	c := m.sel.cursor
+	i := m.firstRow(c.file, c.line)
+	if d > 0 {
+		i = m.lastRow(c.file, c.line)
+	}
+	for i += d; i >= 0 && i < len(m.rows); i += d {
+		if m.codeRow(i) {
+			m.sel.cursor = pos{m.rows[i].file, m.rows[i].line}
+			break
 		}
 	}
 	m.showCursor()
@@ -107,10 +171,11 @@ func (m *model) moveCursor(d int) {
 
 // showCursor keeps the cursor's rows on screen, clear of the sticky header.
 func (m *model) showCursor() {
-	if top := m.firstRow(m.sel.file, m.sel.cursor); top >= 0 && top < m.off+1 {
+	c := m.sel.cursor
+	if top := m.firstRow(c.file, c.line); top >= 0 && top < m.off+1 {
 		m.off = top - 1
 	}
-	if bot := m.lastRow(m.sel.file, m.sel.cursor); bot >= m.off+m.paneHeight() {
+	if bot := m.lastRow(c.file, c.line); bot >= m.off+m.paneHeight() {
 		m.off = bot - m.paneHeight() + 1
 	}
 	m.clamp()
@@ -118,31 +183,35 @@ func (m *model) showCursor() {
 
 // selectKey handles keys while a selection is open; false means not handled.
 func (m *model) selectKey(k string) (bool, tea.Cmd) {
+	c := m.sel.cursor
 	switch k {
 	case "esc":
-		m.sel.on = false
+		m.sel = selection{}
 	case "v":
-		m.sel.anchored, m.sel.anchor = true, m.sel.cursor
+		if m.sel.anchored { // keep this range, then pick the next
+			m.sel.kept, m.sel.anchored = m.selSpans(), false
+		} else {
+			m.sel.anchored, m.sel.anchor = true, c
+		}
 	case "up", "k":
 		m.moveCursor(-1)
 	case "down", "j":
 		m.moveCursor(1)
 	case "a":
-		if m.sel.anchored {
-			lo, hi := m.sel.bounds()
-			m.newChat(m.sel.file, lo, hi)
+		if spans := m.selSpans(); len(spans) > 0 {
+			m.newChat(spans)
 		}
 	case "o":
-		if cs := m.convosAt(m.sel.file, m.sel.cursor); len(cs) > 0 {
+		if cs := m.convosAt(c.file, c.line); len(cs) > 0 {
 			m.openChats(cs)
 		}
 	case "r":
-		if ts := m.threadsAt(m.sel.file, m.sel.cursor); len(ts) > 0 {
+		if ts := m.threadsAt(c.file, c.line); len(ts) > 0 {
 			m.openThreads(ts)
 		}
 	case "y":
-		if m.sel.anchored {
-			return true, m.copySelection()
+		if spans := m.selSpans(); len(spans) > 0 {
+			return true, m.copySelection(spans)
 		}
 	default:
 		return false, nil
@@ -152,32 +221,51 @@ func (m *model) selectKey(k string) (bool, tea.Cmd) {
 
 // copySelection puts the selected lines on the clipboard: plain code when
 // they are all on one side of the change, a diff with +/- when they mix.
-func (m *model) copySelection() tea.Cmd {
-	lo, hi := m.sel.bounds()
-	lines := m.files[m.sel.file].Lines[lo : hi+1]
-	adds, dels := false, false
-	for _, l := range lines {
-		adds = adds || l.Kind == Add
-		dels = dels || l.Kind == Del
-	}
-	var b strings.Builder
-	for _, l := range lines {
-		if !selectable(l) {
-			continue
-		}
-		if adds && dels {
-			b.WriteString(map[LineKind]string{Add: "+", Del: "-", Ctx: " "}[l.Kind])
-		}
-		b.WriteString(l.Raw + "\n")
-	}
-	n := m.selectedCount()
-	m.flash = fmt.Sprintf("copied %d %s", n, plural(n, "line", "lines"))
+// With more than one range, each starts with its place ("model.go:L12–L18");
+// a hunk header inside a range becomes "⋮" (or the header itself in a diff).
+func (m *model) copySelection(spans []span) tea.Cmd {
+	text := m.copyText(spans)
+	m.flash = "copied " + m.selSummary()
 	cmd := exec.Command("pbcopy")
-	cmd.Stdin = strings.NewReader(b.String())
+	cmd.Stdin = strings.NewReader(text)
 	if cmd.Run() == nil {
 		return nil
 	}
-	return tea.SetClipboard(b.String()) // OSC 52, where there is no pbcopy
+	return tea.SetClipboard(text) // OSC 52, where there is no pbcopy
+}
+
+func (m *model) copyText(spans []span) string {
+	adds, dels := false, false
+	for _, sp := range spans {
+		for _, l := range m.files[sp.file].Lines[sp.lo : sp.hi+1] {
+			adds = adds || l.Kind == Add
+			dels = dels || l.Kind == Del
+		}
+	}
+	mixed := adds && dels
+	var b strings.Builder
+	for i, sp := range spans {
+		if len(spans) > 1 {
+			if i > 0 {
+				b.WriteString("\n")
+			}
+			b.WriteString(m.rangeLabel(sp.file, sp.lo, sp.hi) + "\n")
+		}
+		for _, l := range m.files[sp.file].Lines[sp.lo : sp.hi+1] {
+			switch {
+			case l.Kind == Hunk && mixed:
+				b.WriteString(l.Text + "\n")
+			case l.Kind == Hunk:
+				b.WriteString("⋮\n")
+			case !selectable(l):
+			case mixed:
+				b.WriteString(map[LineKind]string{Add: "+", Del: "-", Ctx: " "}[l.Kind] + l.Raw + "\n")
+			default:
+				b.WriteString(l.Raw + "\n")
+			}
+		}
+	}
+	return b.String()
 }
 
 // markSelected replaces the first cell of a selected row with a bar, and of
@@ -197,7 +285,7 @@ func (m *model) markSelected(i int) string {
 	}
 	bar := lipgloss.NewStyle().Foreground(m.theme.Accent)
 	first := i == 0 || m.rows[i-1].file != r.file || m.rows[i-1].line != r.line
-	if r.line == m.sel.cursor && r.file == m.sel.file && first { // not on a wrapped line's other rows
+	if (pos{r.file, r.line}) == m.sel.cursor && first { // not on a wrapped line's other rows
 		bar = bar.Bold(true)
 		return bar.Render("▶") + ansi.TruncateLeft(text, 1, "")
 	}
@@ -207,14 +295,36 @@ func (m *model) markSelected(i int) string {
 	return bar.Render("▌") + ansi.TruncateLeft(text, 1, "")
 }
 
-// selectedCount is the number of lines in the selection, for the footer.
+// selectedCount is the number of code lines in the selection.
 func (m *model) selectedCount() int {
-	lo, hi := m.sel.bounds()
 	n := 0
-	for _, l := range m.files[m.sel.file].Lines[lo : hi+1] {
-		if selectable(l) {
-			n++
+	for _, sp := range m.selSpans() {
+		for _, l := range m.files[sp.file].Lines[sp.lo : sp.hi+1] {
+			if selectable(l) {
+				n++
+			}
 		}
 	}
 	return n
+}
+
+// selSummary is "12 lines", or "12 lines in 3 ranges", for the footer.
+func (m *model) selSummary() string {
+	n := m.selectedCount()
+	s := fmt.Sprintf("%d %s", n, plural(n, "line", "lines"))
+	if r := len(m.selSpans()); r > 1 {
+		s += fmt.Sprintf(" in %d ranges", r)
+	}
+	return s
+}
+
+// selHints is the footer while selecting.
+func (m *model) selHints() string {
+	switch {
+	case m.sel.anchored:
+		return m.selSummary() + " selected · v add another range · a ask Claude · y copy · esc cancel"
+	case len(m.sel.kept) > 0:
+		return m.selSummary() + " selected · go to the next range's first line, then v · a ask Claude · y copy · esc cancel"
+	}
+	return "go to the first line, then press v to start selecting · esc cancel"
 }

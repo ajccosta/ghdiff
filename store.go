@@ -21,18 +21,24 @@ type savedTurn struct {
 	Err bool   `json:"err,omitempty"`
 }
 
+// savedRange is one range of a conversation's lines.
+type savedRange struct {
+	Path  string   `json:"path"`
+	Lines []string `json:"lines"` // "+text", "-text", " text" for lo..hi
+	Old   int      `json:"old"`   // the first line's numbers, to prefer
+	New   int      `json:"new"`
+}
+
 type savedConvo struct {
-	Path      string      `json:"path"`
-	Lines     []string    `json:"lines"` // "+text", "-text", " text" for lo..hi
-	Old       int         `json:"old"`   // the first line's numbers, to prefer
-	New       int         `json:"new"`
-	Turns     []savedTurn `json:"turns"`
-	Session   string      `json:"session,omitempty"`
-	Dir       string      `json:"dir,omitempty"` // where claude ran; resume needs it
-	ReadRepo  bool        `json:"readRepo,omitempty"`
-	CommentID int64       `json:"commentId,omitempty"`
-	Posted    int         `json:"posted,omitempty"`
-	Created   time.Time   `json:"created"`
+	savedRange              // the first range
+	More       []savedRange `json:"more,omitempty"` // the others
+	Turns      []savedTurn  `json:"turns"`
+	Session    string       `json:"session,omitempty"`
+	Dir        string       `json:"dir,omitempty"` // where claude ran; resume needs it
+	ReadRepo   bool         `json:"readRepo,omitempty"`
+	CommentID  int64        `json:"commentId,omitempty"`
+	Posted     int          `json:"posted,omitempty"`
+	Created    time.Time    `json:"created"`
 }
 
 type savedFile struct {
@@ -123,12 +129,20 @@ func (m *model) loadConvos() {
 		return
 	}
 	for _, s := range sf.Convos {
-		fi, lo := m.place(s)
-		if fi < 0 {
+		var spans []span
+		for _, r := range append([]savedRange{s.savedRange}, s.More...) {
+			fi, lo := m.place(r)
+			if fi < 0 {
+				spans = nil
+				break
+			}
+			spans = append(spans, span{fi, lo, lo + len(r.Lines) - 1})
+		}
+		if spans == nil {
 			m.unplaced = append(m.unplaced, s)
 			continue
 		}
-		c := &convo{file: fi, lo: lo, hi: lo + len(s.Lines) - 1, session: s.Session,
+		c := &convo{spans: spans, session: s.Session,
 			dir: s.Dir, readRepo: s.ReadRepo, commentID: s.CommentID, posted: s.Posted, created: s.Created}
 		for _, t := range s.Turns {
 			c.turns = append(c.turns, turn{q: t.Q, a: t.A, err: t.Err})
@@ -139,7 +153,7 @@ func (m *model) loadConvos() {
 
 // place finds where a saved conversation's lines are in this diff,
 // preferring the same line numbers when the lines appear more than once.
-func (m *model) place(s savedConvo) (file, lo int) {
+func (m *model) place(s savedRange) (file, lo int) {
 	file, lo = -1, -1
 	for fi, f := range m.files {
 		if f.Path() != s.Path || len(s.Lines) == 0 {
@@ -173,12 +187,19 @@ func (m *model) saveConvos() {
 		if len(c.turns) == 0 {
 			continue
 		}
-		f := m.files[c.file]
-		s := savedConvo{Path: f.Path(), Old: f.Lines[c.lo].Old, New: f.Lines[c.lo].New,
-			Session: c.session, Dir: c.dir, ReadRepo: c.readRepo,
+		s := savedConvo{Session: c.session, Dir: c.dir, ReadRepo: c.readRepo,
 			CommentID: c.commentID, Posted: c.posted, Created: c.created}
-		for _, l := range f.Lines[c.lo : c.hi+1] {
-			s.Lines = append(s.Lines, lineSig(l))
+		for i, sp := range c.spans {
+			f := m.files[sp.file]
+			r := savedRange{Path: f.Path(), Old: f.Lines[sp.lo].Old, New: f.Lines[sp.lo].New}
+			for _, l := range f.Lines[sp.lo : sp.hi+1] {
+				r.Lines = append(r.Lines, lineSig(l))
+			}
+			if i == 0 {
+				s.savedRange = r
+			} else {
+				s.More = append(s.More, r)
+			}
 		}
 		for _, t := range c.turns {
 			if t.a == "" && !t.err {
@@ -199,11 +220,21 @@ func (m *model) saveConvos() {
 	}
 }
 
+// covers reports whether line li of file fi is in one of c's ranges.
+func (c *convo) covers(fi, li int) bool {
+	for _, s := range c.spans {
+		if s.covers(fi, li) {
+			return true
+		}
+	}
+	return false
+}
+
 // convosAt are the conversations covering line li of file fi, newest last.
 func (m *model) convosAt(fi, li int) []*convo {
 	var out []*convo
 	for _, c := range m.convos {
-		if c.file == fi && li >= c.lo && li <= c.hi && len(c.turns) > 0 {
+		if c.covers(fi, li) && len(c.turns) > 0 {
 			out = append(out, c)
 		}
 	}
@@ -229,10 +260,10 @@ func (m *model) convoMark(i int) (mark string, github bool) {
 		mark, github = "│", true
 	}
 	for _, c := range m.convos {
-		if c.file != r.file || r.line < c.lo || r.line > c.hi || len(c.turns) == 0 {
+		if !c.covers(r.file, r.line) || len(c.turns) == 0 {
 			continue
 		}
-		if r.line == c.lo && first {
+		if s := c.spans[0]; s.file == r.file && r.line == s.lo && first {
 			return "●", false
 		}
 		if mark == "" {

@@ -24,15 +24,20 @@ The current file's header is highlighted, like its name in the tree; `n`/`p`,
 scrolling, the tree and clicking a header all move it.
 
 Mouse: click a file header's arrow to collapse or expand it, the header to
-make it the current file; click a line to select it and drag to extend; drag the border between
+make it the current file; click a line to select it and drag to extend (Option- or
+Ctrl-click starts another range and keeps the others); drag the border between
 the tree and the diff, or around the Claude pane, to resize. `+`/`-` make the
 Claude pane bigger or smaller and `{`/`}` the tree narrower or wider; sizes
 are remembered.
 
 `v` shows a line cursor: move it with `↑↓`, press `v` again to start selecting,
-then `↑↓` extend the selection (within one hunk). `Esc` cancels at any point.
+then `↑↓` extend the selection, across hunks and into other files. `v` once
+more keeps that range and shows the cursor again for the next one: select as
+many ranges as you like. `Esc` cancels them all.
 `y` copies the selected lines (with `+`/`-` when they mix removed and added
-lines).
+lines; a skipped part of the file between hunks is `⋮`, or the `@@` line in a
+diff). With several ranges, each starts with its place (`model.go:L12–L18`).
+`a` asks Claude about all of them at once.
 
 ## Ask Claude about a selection
 
@@ -62,7 +67,7 @@ The question prompt has the usual terminal editing keys: `Ctrl+A`/`Ctrl+E`
 (delete to start/end), `Delete`/`Ctrl+D`.
 
 `P` posts the conversation to the PR (after a y/n) as a review comment on the
-selected lines, at the PR's head commit (or the commit being viewed). Posting
+selected lines (one range in one hunk, as GitHub comments are), at the PR's head commit (or the commit being viewed). Posting
 again after more follow-ups replies in the same thread with just the new
 questions and answers. This needs the PR: open the diff from gh-dash, or use
 `ghdiff --pr N -R owner/repo`.
