@@ -141,20 +141,35 @@ func (m *model) toTerm(ev tea.MouseMsg) bool {
 	return true
 }
 
+// borderAt is the border at x, y that a drag resizes, if any.
+func (m *model) borderAt(x, y int) drag {
+	tw, cw := m.treeWidth(), m.chatWidth()
+	switch {
+	case tw > 0 && x == tw && y >= 1 && y <= m.paneHeight():
+		return dragTree
+	case cw > 0 && x == m.width-cw-1 && y >= 1 && y <= m.paneHeight():
+		return dragPaneW
+	case m.paneShown() && cw == 0 && y == m.paneHeight()+1:
+		return dragPaneH
+	}
+	return dragNone
+}
+
 func (m *model) mouseClick(msg tea.MouseClickMsg) tea.Cmd {
 	mo := msg.Mouse()
 	if mo.Button != tea.MouseLeft || m.help {
 		m.help = false
 		return nil
 	}
-	tw, cw := m.treeWidth(), m.chatWidth()
+	if d := m.borderAt(mo.X, mo.Y); d != dragNone {
+		m.drag = d
+		return nil
+	}
+	if !m.inPane(mo.X, mo.Y) && m.paneOpen() && !m.away && !m.consent && !m.confirmPost {
+		m.switchFocus() // a click anywhere outside the pane is like ctrl+o
+	}
+	tw := m.treeWidth()
 	switch {
-	case tw > 0 && mo.X == tw && mo.Y >= 1 && mo.Y <= m.paneHeight():
-		m.drag = dragTree
-	case cw > 0 && mo.X == m.width-cw-1 && mo.Y >= 1 && mo.Y <= m.paneHeight():
-		m.drag = dragPaneW
-	case m.paneShown() && cw == 0 && mo.Y == m.paneHeight()+1:
-		m.drag = dragPaneH
 	case m.pop.has(mo.X, mo.Y):
 		m.openNote(m.pop.noteAt(mo.Y), m.pop.notes)
 	case m.inPane(mo.X, mo.Y):
@@ -177,9 +192,6 @@ func (m *model) mouseClick(msg tea.MouseClickMsg) tea.Cmd {
 		if ns, _ := m.markUnder(mo.X, mo.Y); len(ns) > 0 && mo.Mod == 0 {
 			m.openNote(ns[len(ns)-1], ns) // a click on ◆ or ● opens it
 			return nil
-		}
-		if m.paneOpen() && !m.away {
-			m.switchFocus() // clicking the diff is like ctrl+o
 		}
 		m.focus = focusDiff
 		var kept []span

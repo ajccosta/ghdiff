@@ -97,6 +97,14 @@ func TestClaudeCodeRunsInThePane(t *testing.T) {
 		t.Fatal("n did not cancel posting")
 	}
 	m.Update(tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl})
+	if m.away {
+		t.Fatal("ctrl+o did not switch back to the pane")
+	}
+	m.Update(tea.MouseClickMsg{X: 0, Y: 0, Button: tea.MouseLeft}) // the title, outside the pane
+	if !m.away {
+		t.Fatal("a click outside the pane did not switch to the diff")
+	}
+	m.Update(tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl})
 	tm := c.term
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m.Update(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}) // cat ends

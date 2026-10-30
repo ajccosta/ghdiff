@@ -47,7 +47,8 @@ With lines selected, `a` opens Claude Code itself, the terminal app with your
 normal Claude login, in a pane under the diff. It is told about the diff and the
 selected lines, and is used as usual: type to it, answer its questions, let it
 edit (in a worktree, see below). It starts in auto mode (`Shift+Tab` changes
-it). `Ctrl+O` switches to the diff and back. There,
+it). `Ctrl+O`, or a click anywhere outside the pane, switches to the diff, and
+`Ctrl+O` or a click on the pane switches back. There,
 `Ctrl+X` hides the pane while Claude Code keeps running, and `P` posts the
 conversation. `/exit` ends it, and reopening the conversation resumes it
 (`claude --resume`). `N` starts a new conversation on the same lines (the old
