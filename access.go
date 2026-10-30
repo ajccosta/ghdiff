@@ -17,7 +17,8 @@ type access struct {
 	hint  string   // the consent question's hint for key
 	tools string   // claude --tools ("" none)
 	args  []string // for claude -p and Claude Code
-	// printArgs only for claude -p, where nobody can answer a prompt.
+	// printArgs only for claude -p, where nobody can answer a prompt;
+	// Claude Code starts in codePermissionMode instead.
 	printArgs []string
 	prompt    string // what the first prompt tells Claude about its directory
 
@@ -51,14 +52,14 @@ var accesses = []access{
 		// --restricted keeps the file tools in the worktree; Bash may only
 		// run git, and not on another directory or a remote.
 		tools: "Read,Grep,Glob,Edit,Write,Bash",
-		args: []string{"--restricted", "--permission-mode", "acceptEdits",
+		args: []string{"--restricted",
 			"--allowedTools", "Read,Grep,Glob,Bash(git:*)",
 			"--disallowedTools", "Bash(git -C:*),Bash(git --git-dir:*),Bash(git --work-tree:*),Bash(git push:*)"},
 		prompt: "The working directory is a git worktree of the repository the diff applies to, made for this " +
 			"conversation and checked out at the diff's head (detached). It is yours: you may edit and write files " +
 			"there, and run git (switch to another branch or commit, show history, commit your changes) to do what " +
 			"they ask. Stay in this directory, and say what you changed and which commits you made.\n",
-		printArgs: []string{"--permission-prompts", "none"},
+		printArgs: []string{"--permission-mode", "acceptEdits", "--permission-prompts", "none"},
 		dir:       makeWorktree,
 		label:     func(_ *model, c *convo) string { return "worktree " + c.dir },
 	},

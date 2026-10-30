@@ -50,7 +50,8 @@ func runCmd(cmd tea.Cmd) []tea.Msg {
 
 func TestClaudeCodeRunsInThePane(t *testing.T) {
 	fake := filepath.Join(t.TempDir(), "claude")
-	os.WriteFile(fake, []byte("#!/bin/sh\necho started\nexec cat\n"), 0o755)
+	argsFile := filepath.Join(t.TempDir(), "args")
+	os.WriteFile(fake, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > "+argsFile+"\necho started\nexec cat\n"), 0o755)
 	old := claudeBin
 	claudeBin = fake
 	t.Cleanup(func() { claudeBin = old })
@@ -68,6 +69,9 @@ func TestClaudeCodeRunsInThePane(t *testing.T) {
 	drive(t, m, nil, shows("started"))
 	if c.term == nil || c.session == "" {
 		t.Fatal("no terminal or session")
+	}
+	if args, _ := os.ReadFile(argsFile); !strings.Contains(string(args), "--permission-mode\nauto\n") {
+		t.Fatalf("not started in auto mode: %q", args)
 	}
 	for _, r := range "hi" {
 		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})

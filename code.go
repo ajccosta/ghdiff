@@ -31,6 +31,10 @@ func (m *model) claudeMode() string {
 	return claudeModes[0]
 }
 
+// codePermissionMode is the mode Claude Code starts in, at every access level
+// (shift+tab changes it there).
+var codePermissionMode = "auto"
+
 // claudeBin is the Claude Code command; tests swap it.
 var claudeBin = "claude"
 
@@ -63,7 +67,8 @@ func (m *model) ensureTerm() tea.Cmd {
 		c.access = accessFor(m.access).id
 	}
 	a := accessFor(c.access)
-	args := append([]string{"--tools", a.tools, "--append-system-prompt", m.codePrompt(c)}, a.args...)
+	args := append([]string{"--tools", a.tools, "--append-system-prompt", m.codePrompt(c),
+		"--permission-mode", codePermissionMode}, a.args...)
 	if c.session == "" {
 		c.session = newUUID()
 		args = append(args, "--session-id", c.session)

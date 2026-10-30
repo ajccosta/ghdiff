@@ -46,14 +46,14 @@ diff). With several ranges, each starts with its place (`model.go:L12–L18`).
 With lines selected, `a` opens Claude Code itself, the terminal app with your
 normal Claude login, in a pane under the diff. It is told about the diff and the
 selected lines, and is used as usual: type to it, answer its questions, let it
-edit (in a worktree, see below). `Ctrl+O` switches to the diff and back. There,
+edit (in a worktree, see below). It starts in auto mode (`Shift+Tab` changes
+it). `Ctrl+O` switches to the diff and back. There,
 `Ctrl+X` hides the pane while Claude Code keeps running, and `P` posts the
 conversation. `/exit` ends it, and reopening the conversation resumes it
 (`claude --resume`). `N` starts a new conversation on the same lines (the old
 one is kept), and `<` `>` switch between the conversations there. The mouse
 works over the pane as in a terminal: the wheel scrolls Claude Code, clicks
-reach it. Quitting ghdiff
-stops Claude Code and keeps what was said.
+reach it. Quitting ghdiff stops Claude Code and keeps what was said.
 
 With `"claude": "print"` in `~/.local/state/ghdiff/settings.json`, `a` asks with
 `claude -p` instead: the question is typed in ghdiff and the answer opens in
