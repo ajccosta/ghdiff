@@ -53,6 +53,7 @@ type settings struct {
 	ChatSide   bool       `json:"chatSide"`
 	ThreadView threadMode `json:"threadView,omitempty"`
 	Claude     string     `json:"claude,omitempty"` // "code" (default) or "print"
+	MdSource   bool       `json:"markdownSource,omitempty"`
 	sizes
 }
 
@@ -74,7 +75,7 @@ func settingsPath() string { return filepath.Join(stateDir(), "settings.json") }
 func (m *model) loadSettings() {
 	var s settings
 	if b, err := os.ReadFile(settingsPath()); err == nil && json.Unmarshal(b, &s) == nil {
-		m.side, m.sizes, m.ThreadView, m.Claude = s.ChatSide, s.sizes, s.ThreadView, s.Claude
+		m.side, m.sizes, m.ThreadView, m.Claude, m.MdSource = s.ChatSide, s.sizes, s.ThreadView, s.Claude, s.MdSource
 	}
 }
 
@@ -83,7 +84,7 @@ func (m *model) saveSettings() {
 		return
 	}
 	p := settingsPath()
-	b, _ := json.MarshalIndent(settings{ChatSide: m.side, ThreadView: m.ThreadView, Claude: m.Claude, sizes: m.sizes}, "", "  ")
+	b, _ := json.MarshalIndent(settings{ChatSide: m.side, ThreadView: m.ThreadView, Claude: m.Claude, MdSource: m.MdSource, sizes: m.sizes}, "", "  ")
 	os.MkdirAll(filepath.Dir(p), 0o755)
 	os.WriteFile(p, b, 0o600)
 }

@@ -121,8 +121,10 @@ func (t *term) mouse(ev tea.MouseMsg, x, y int) {
 	}
 }
 
-// lines are the screen's h lines, w cells wide, from scroll lines back.
-func (t *term) lines() []string {
+// lines are the screen's h lines, w cells wide, from scroll lines back. With
+// cursor, the program's cursor is drawn (reversed) where it is, unless it hid
+// it: the pane is text in ghdiff's screen, which has no cursor of its own.
+func (t *term) lines(cursor bool) []string {
 	screen := strings.Split(t.emu.Render(), "\n")
 	var out []string
 	if s := t.scroll; s > 0 {
@@ -144,7 +146,23 @@ func (t *term) lines() []string {
 	for i, l := range out {
 		out[i] = ansi.Truncate(l, t.w, "") + "\x1b[0m"
 	}
+	if p := t.emu.CursorPosition(); cursor && t.scroll == 0 && !t.emu.CursorHidden() &&
+		p.Y >= 0 && p.Y < len(out) && p.X >= 0 && p.X < t.w {
+		out[p.Y] = withCursor(out[p.Y], p.X)
+	}
 	return out
+}
+
+// withCursor reverses the cell at column x of line l.
+func withCursor(l string, x int) string {
+	if pad := x + 1 - ansi.StringWidth(l); pad > 0 {
+		l += strings.Repeat(" ", pad)
+	}
+	cell := ansi.Cut(l, x, x+1)
+	if ansi.StringWidth(cell) == 0 {
+		cell = " "
+	}
+	return ansi.Truncate(l, x, "") + "\x1b[7m" + cell + "\x1b[27m" + ansi.TruncateLeft(l, x+1, "")
 }
 
 // stop ends the program (SIGHUP, as when a terminal closes).

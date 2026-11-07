@@ -10,6 +10,7 @@ import (
 // Where review threads show (T switches, remembered in settings.json). An
 // open thread (r, or a click on the box) is in the tree's column, where t (or
 // ctrl+o) switches between the tree and the thread.
+//   - inline (the default): under their last line, as on GitHub (threadinline.go).
 //   - hover: a box over the diff while the mouse is on a thread's ◆ (or the
 //     box), or the cursor is on its first line.
 //   - left: no box; r opens the thread.
@@ -19,9 +20,10 @@ import (
 type threadMode string
 
 const (
-	threadsHover threadMode = "hover"
-	threadsLeft  threadMode = "left"
-	threadsPane  threadMode = "pane"
+	threadsInline threadMode = "inline"
+	threadsHover  threadMode = "hover"
+	threadsLeft   threadMode = "left"
+	threadsPane   threadMode = "pane"
 )
 
 // threadModes in the order T cycles through them, with what the footer says.
@@ -29,6 +31,7 @@ var threadModes = []struct {
 	mode threadMode
 	note string
 }{
+	{threadsInline, "Review threads show under their lines"},
 	{threadsHover, "Review threads and Claude conversations show when you hover their ◆ or ●"},
 	{threadsLeft, "Review threads open in the left column (t switches to the tree)"},
 }
@@ -42,7 +45,7 @@ func (m *model) threadMode() threadMode {
 			return tm.mode
 		}
 	}
-	return threadsHover
+	return threadsInline
 }
 
 // cycleThreadMode moves to the next place, taking the thread on screen along.
@@ -148,7 +151,25 @@ func (p popup) noteAt(y int) note {
 // hoverNotes are the notes to show in the box, and the diff row to put it
 // under: the line under the mouse, else the cursor's.
 func (m *model) hoverNotes() ([]note, int) {
-	if m.threadMode() != threadsHover || m.paneOpen() || m.help || m.consent || m.confirmPost {
+	ns, r := m.hoverNotesAll()
+	if m.threadMode() == threadsInline { // the threads are on screen already
+		var keep []note
+		for _, n := range ns {
+			if _, ok := n.(threadNote); !ok {
+				keep = append(keep, n)
+			}
+		}
+		if len(keep) == 0 {
+			return nil, -1
+		}
+		ns = keep
+	}
+	return ns, r
+}
+
+func (m *model) hoverNotesAll() ([]note, int) {
+	mode := m.threadMode()
+	if mode != threadsHover && mode != threadsInline || m.paneOpen() || m.help || m.consent || m.confirmPost {
 		return nil, -1
 	}
 	if m.mouse.on && m.pop.has(m.mouse.x, m.mouse.y) {

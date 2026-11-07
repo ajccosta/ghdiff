@@ -186,6 +186,13 @@ func (m *model) mouseClick(msg tea.MouseClickMsg) tea.Cmd {
 			return nil
 		}
 		r := m.diffRow(mo.Y)
+		if r >= 0 && m.rows[r].thread != nil && !m.consent && !m.confirmPost {
+			m.openThreads([]*thread{m.rows[r].thread}) // a thread under its lines opens
+			return nil
+		}
+		if fi, li, ok := m.gapRow(r); ok && !m.consent && !m.confirmPost {
+			return m.toggleGap(fi, li) // an @@ row shows or hides the lines it skips
+		}
 		if r < 0 || !m.codeRow(r) || m.consent || m.confirmPost {
 			return nil
 		}
@@ -277,11 +284,15 @@ const helpText = `ghdiff keys
 Diff
   v           cursor; v again starts selecting
   a           ask Claude about the selection
+  c           comment on the selection on the PR
   y           copy the selection
   o / r       open the Claude conversation / review thread on the line
-  T           review threads: on hover, or only with r (in the left column)
+  T           review threads: under their lines, on hover, or only with r
   n / p       next / previous file
   c / C       collapse the file / all files
+  e / E       show the lines an @@ hides (at the cursor) / all in the file
+  /           search (n / N next / previous match, esc clears)
+  m           markdown files: formatted / source
   t / tab     hide the left pane / move to it (tab again: the next one)
   s           Claude pane beside or below the diff
   q           quit
@@ -299,6 +310,7 @@ Sizes
 
 Mouse
   click, drag select lines
+  click @@    show / hide the lines it hides
   hover       a commented line shows its review thread
   wheel       scroll
 

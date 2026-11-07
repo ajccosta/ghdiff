@@ -10,6 +10,7 @@ import (
 func TestHighlightFollowsEachSide(t *testing.T) {
 	d := "diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -1,3 +1,3 @@\n /* a comment\n-old */ var a = 1\n+new */ var b = 2\n func f() {}\n"
 	f := Parse(strings.NewReader(d))[0]
+	f.prepare()
 	typeAt := func(li int, word string) chroma.TokenType {
 		l := f.Lines[li]
 		i := strings.Index(l.Text, word)
@@ -38,7 +39,9 @@ func TestHighlightFollowsEachSide(t *testing.T) {
 
 func TestNoHighlightForUnknownFiles(t *testing.T) {
 	d := "diff --git a/notes.zzz b/notes.zzz\n--- a/notes.zzz\n+++ b/notes.zzz\n@@ -1 +1 @@\n-a\n+b\n"
-	for _, l := range Parse(strings.NewReader(d))[0].Lines {
+	f := Parse(strings.NewReader(d))[0]
+	f.prepare()
+	for _, l := range f.Lines {
 		if l.Syntax != nil {
 			t.Fatalf("unexpected tokens: %v", l.Syntax)
 		}

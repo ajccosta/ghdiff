@@ -74,7 +74,18 @@ type row struct {
 	file   int
 	line   int // index into File.Lines, -1 for headers and spacers
 	header bool
+	tail   bool    // the row after a file's last hunk that shows the rest (expand.go)
+	col    int     // where the text starts after the line numbers; search looks from there
+	thread *thread // a review thread drawn under its lines; a click opens it
 	text   string
+}
+
+// expander says which hidden lines show (expand.go).
+type expander interface {
+	gap(fi, li int) []Line
+	expandLabel(fi, li int) string
+	mdSource() bool                     // markdown files show their source, not formatted (md.go)
+	under(fi, li, col, width int) []row // rows drawn under line li (threadinline.go)
 }
 
 func digits(n int) int {
@@ -108,7 +119,7 @@ func counts(t Theme, adds, dels int, base lipgloss.Style) string {
 
 // fileHeader is a file's header row; the current file's (the one the tree
 // highlights too) has its arrow and name in the accent colour.
-func fileHeader(t Theme, f *File, collapsed bool, width int, current bool) string {
+func fileHeader(t Theme, f *File, collapsed bool, width int, current bool, note string) string {
 	arrow := "▾"
 	if collapsed {
 		arrow = "▸"
@@ -124,6 +135,9 @@ func fileHeader(t Theme, f *File, collapsed bool, width int, current bool) strin
 	}
 	left := bg.Render(" ") + hl.Bold(current).Render(arrow) + bg.Render(" ") + statusMark(t, f.Status, bg) + hl.Bold(true).Render(" "+name+" ")
 	right := counts(t, f.Adds, f.Dels, bg) + bg.Render(" ")
+	if note != "" {
+		right = bg.Foreground(t.Dim).Render(note+"   ") + right
+	}
 	gap := width - ansi.StringWidth(left) - ansi.StringWidth(right)
 	if gap < 1 {
 		left = ansi.Truncate(left, max(0, width-ansi.StringWidth(right)-2), "…") + bg.Render(" ")
@@ -132,8 +146,16 @@ func fileHeader(t Theme, f *File, collapsed bool, width int, current bool) strin
 	return left + bg.Render(strings.Repeat(" ", gap)) + right
 }
 
+// fileNote is the dim note in a file's header.
+func fileNote(f *File, collapsed, mdSource bool) string {
+	if collapsed && !f.prepared {
+		return "not loaded · c loads it"
+	}
+	return mdNote(f, mdSource)
+}
+
 // buildRows lays the whole diff out for a pane of the given width.
-func buildRows(t Theme, files []*File, collapsed map[int]bool, width int) ([]row, []int) {
+func buildRows(t Theme, files []*File, collapsed map[int]bool, width int, ex expander) ([]row, []int) {
 	maxNo := 1
 	for _, f := range files {
 		for _, l := range f.Lines {
@@ -148,16 +170,43 @@ func buildRows(t Theme, files []*File, collapsed map[int]bool, width int) ([]row
 	starts := make([]int, len(files))
 	for fi, f := range files {
 		starts[fi] = len(rows)
-		rows = append(rows, row{file: fi, line: -1, header: true, text: fileHeader(t, f, collapsed[fi], width, false)})
+		rows = append(rows, row{file: fi, line: -1, header: true, text: fileHeader(t, f, collapsed[fi], width, false, fileNote(f, collapsed[fi], ex.mdSource()))})
 		if collapsed[fi] {
 			rows = append(rows, row{file: fi, line: -1})
 			continue
 		}
+		f.prepare()
+		format := func(l Line) Line { return l }
+		if isMarkdown(f) && !ex.mdSource() {
+			format = mdFormatter()
+		}
+		// Lines the diff leaves out show under their @@ row, not selectable.
+		gap := func(li int) {
+			for _, g := range ex.gap(fi, li) {
+				g = format(g)
+				for _, text := range renderLine(t, g, nw, cw-1, width-1) {
+					rows = append(rows, row{file: fi, line: -1, col: 1 + gutterW, text: " " + text})
+				}
+			}
+		}
 		for li, l := range f.Lines {
+			if lab := ex.expandLabel(fi, li); lab != "" && l.Kind == Hunk {
+				l.Text = lab + "  " + l.Text
+			}
+			l = format(l)
 			// One spare column on the left for the selection bar.
 			for _, text := range renderLine(t, l, nw, cw-1, width-1) {
-				rows = append(rows, row{file: fi, line: li, text: " " + text})
+				rows = append(rows, row{file: fi, line: li, col: 1 + gutterW, text: " " + text})
 			}
+			rows = append(rows, ex.under(fi, li, 1+gutterW, width)...)
+			if l.Kind == Hunk {
+				gap(li)
+			}
+		}
+		if lab := ex.expandLabel(fi, len(f.Lines)); lab != "" {
+			text := renderLine(t, Line{Kind: Hunk, Text: lab}, nw, cw-1, width-1)[0]
+			rows = append(rows, row{file: fi, line: -1, tail: true, col: 1 + gutterW, text: " " + text})
+			gap(len(f.Lines))
 		}
 		rows = append(rows, row{file: fi, line: -1})
 	}
@@ -207,10 +256,10 @@ func renderLine(t Theme, l Line, nw, cw, width int) []string {
 	type cell struct {
 		r  rune
 		hi bool
-		fg color.Color
+		ts tokStyle
 	}
 	var cells []cell
-	colors := map[chroma.TokenType]color.Color{}
+	styles := map[chroma.TokenType]tokStyle{}
 	for i, r := range l.Text {
 		c := cell{r: r}
 		for _, s := range l.Spans {
@@ -221,12 +270,12 @@ func renderLine(t Theme, l Line, nw, cw, width int) []string {
 		}
 		for _, tk := range l.Syntax {
 			if i >= tk.From && i < tk.To {
-				fg, ok := colors[tk.Type]
+				ts, ok := styles[tk.Type]
 				if !ok {
-					fg = t.syntaxColor(tk.Type)
-					colors[tk.Type] = fg
+					ts = t.tokStyle(tk.Type)
+					styles[tk.Type] = ts
 				}
-				c.fg = fg
+				c.ts = ts
 				break
 			}
 		}
@@ -262,7 +311,7 @@ func renderLine(t Theme, l Line, nw, cw, width int) []string {
 		for i := 0; i < len(ch); {
 			j := i
 			var seg strings.Builder
-			for j < len(ch) && ch[j].hi == ch[i].hi && ch[j].fg == ch[i].fg {
+			for j < len(ch) && ch[j].hi == ch[i].hi && ch[j].ts == ch[i].ts {
 				seg.WriteRune(ch[j].r)
 				used += runewidth.RuneWidth(ch[j].r)
 				j++
@@ -271,8 +320,11 @@ func renderLine(t Theme, l Line, nw, cw, width int) []string {
 			if ch[i].hi {
 				st = word
 			}
-			if ch[i].fg != nil {
-				st = st.Foreground(ch[i].fg)
+			if ts := ch[i].ts; ts.fg != nil {
+				st = st.Foreground(ts.fg)
+			}
+			if ts := ch[i].ts; ts.bold || ts.italic || ts.underline || ts.strike {
+				st = st.Bold(ts.bold).Italic(ts.italic).Underline(ts.underline).Strikethrough(ts.strike)
 			}
 			b.WriteString(st.Render(seg.String()))
 			i = j

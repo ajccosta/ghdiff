@@ -21,17 +21,15 @@ type tok struct {
 	Type     chroma.TokenType
 }
 
-// highlight sets Line.Syntax on the code lines of every file chroma knows.
-func highlight(files []*File) {
-	for _, f := range files {
-		lexer := lexers.Match(f.Path())
-		if lexer == nil || f.Status == "binary" {
-			continue
-		}
-		lexer = chroma.Coalesce(lexer)
-		highlightSide(lexer, f.Lines, func(l Line) bool { return l.Kind == Ctx || l.Kind == Del }, func(l Line) bool { return l.Kind == Del })
-		highlightSide(lexer, f.Lines, func(l Line) bool { return l.Kind == Ctx || l.Kind == Add }, func(l Line) bool { return l.Kind != Del })
+// highlight sets Line.Syntax on the code lines of f, if chroma knows it.
+func highlight(f *File) {
+	lexer := lexers.Match(f.Path())
+	if lexer == nil || f.Status == "binary" {
+		return
 	}
+	lexer = chroma.Coalesce(lexer)
+	highlightSide(lexer, f.Lines, func(l Line) bool { return l.Kind == Ctx || l.Kind == Del }, func(l Line) bool { return l.Kind == Del })
+	highlightSide(lexer, f.Lines, func(l Line) bool { return l.Kind == Ctx || l.Kind == Add }, func(l Line) bool { return l.Kind != Del })
 }
 
 // highlightSide tokenises the lines on one side (in) as one text, and keeps

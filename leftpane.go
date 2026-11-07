@@ -146,6 +146,7 @@ func (m *model) treeKey(k string) tea.Cmd {
 	case "end", "G":
 		m.moveTree(len(m.files))
 	case "right", "l", "enter":
+		m.load(m.treeSel)
 		m.jumpTo(m.treeSel)
 		m.focus = focusDiff
 	}
@@ -155,6 +156,7 @@ func (m *model) treeKey(k string) tea.Cmd {
 func (m *model) treeClick(row int) tea.Cmd {
 	if i := m.treeTop() + row; i < len(m.tree) && m.tree[i].file >= 0 {
 		m.treeSel = m.tree[i].file
+		m.load(m.treeSel)
 		m.jumpTo(m.treeSel)
 	}
 	return nil

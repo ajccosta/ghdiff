@@ -209,6 +209,8 @@ func (m *model) selectKey(k string) (bool, tea.Cmd) {
 		if ts := m.threadsAt(c.file, c.line); len(ts) > 0 {
 			m.openThreads(ts)
 		}
+	case "c":
+		m.startComment()
 	case "y":
 		if spans := m.selSpans(); len(spans) > 0 {
 			return true, m.copySelection(spans)
@@ -322,7 +324,7 @@ func (m *model) selSummary() string {
 func (m *model) selHints() string {
 	switch {
 	case m.sel.anchored:
-		return m.selSummary() + " selected · v add another range · a ask Claude · y copy · esc cancel"
+		return m.selSummary() + " selected · v add another range · c comment · a ask Claude · y copy · esc cancel"
 	case len(m.sel.kept) > 0:
 		return m.selSummary() + " selected · go to the next range's first line, then v · a ask Claude · y copy · esc cancel"
 	}

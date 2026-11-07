@@ -49,9 +49,13 @@ type model struct {
 	chatState
 	commitsState
 	jump *jump // GHDIFF_GOTO: lines to open at
+	expandState
+	search searchState
+	asking *prompt // a line being typed in the footer (prompt.go)
 
 	ThreadView threadMode // where review threads show (threadview.go)
 	Claude     string     // how new conversations run Claude (code.go)
+	MdSource   bool       // markdown files show their source (md.go)
 	mouse      hover
 	pop        popup
 }
@@ -61,7 +65,7 @@ func newModel(files []*File, title string, raw []byte, t target) *model {
 		chatState: chatState{target: t, diff: raw, repo: findRepo(files, t)},
 		files:     files,
 		title:     title,
-		collapsed: map[int]bool{},
+		collapsed: deferLarge(files),
 		dark:      true,
 		truecolor: true,
 		showTree:  len(files) > 1 || t.dash,
@@ -73,6 +77,31 @@ func newModel(files []*File, title string, raw []byte, t target) *model {
 	m.loadConvos()
 	m.loadSettings()
 	return m
+}
+
+// A big diff opens like GitHub's: files past the first loadBudget diff lines,
+// and any file over fileBudget, start collapsed and are only laid out (and
+// their words and syntax marked) when opened.
+const loadBudget, fileBudget = 4000, 2000
+
+func deferLarge(files []*File) map[int]bool {
+	c, n := map[int]bool{}, 0
+	for i, f := range files {
+		if len(f.Lines) > fileBudget || n+len(f.Lines) > loadBudget {
+			c[i] = true
+			continue
+		}
+		n += len(f.Lines)
+	}
+	return c
+}
+
+// load opens file fi if it was left collapsed and not loaded.
+func (m *model) load(fi int) {
+	if fi >= 0 && fi < len(m.files) && m.collapsed[fi] && !m.files[fi].prepared {
+		delete(m.collapsed, fi)
+		m.relayout()
+	}
 }
 
 func (m *model) Init() tea.Cmd {
@@ -111,7 +140,7 @@ func (m *model) relayout() {
 	if len(m.starts) > 0 {
 		into = m.off - m.starts[cur]
 	}
-	m.rows, m.starts = buildRows(m.theme, m.files, m.collapsed, m.diffWidth())
+	m.rows, m.starts = buildRows(m.theme, m.files, m.collapsed, m.diffWidth(), m)
 	if m.sel.on && (m.collapsed[m.sel.cursor.file] || m.collapsed[m.sel.anchor.file]) {
 		m.sel = selection{}
 	}
@@ -119,6 +148,7 @@ func (m *model) relayout() {
 		m.off = m.starts[cur] + max(0, into)
 	}
 	m.clamp()
+	m.findHits()
 }
 
 func (m *model) maxOff() int {
@@ -226,11 +256,15 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.gotCommits(msg)
 	case diffMsg:
 		return m, m.gotDiff(msg)
+	case textMsg:
+		m.gotText(msg)
 	case threadsMsg:
 		m.gotThreads(msg)
 		m.applyJump()
 	case replyMsg:
 		m.gotReply(msg)
+	case commentedMsg:
+		return m, m.gotComment(msg)
 	case termStartedMsg:
 		return m, m.termStarted(msg)
 	case termOutMsg:
@@ -259,6 +293,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.help {
 			m.help = false
 			return m, nil
+		}
+		if m.asking != nil {
+			return m, m.promptKey(msg)
 		}
 		if (!m.typing || m.away) && !m.consent && !m.confirmPost {
 			if k == "h" || k == "?" {
@@ -297,6 +334,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) key(k string) tea.Cmd {
 	page := m.paneHeight()
 	m.flash = ""
+	if m.searchNav(k) {
+		return nil
+	}
 	if m.sel.on && m.focus == focusDiff {
 		if ok, cmd := m.selectKey(k); ok {
 			return cmd
@@ -374,6 +414,10 @@ func (m *model) key(k string) tea.Cmd {
 		m.scroll(len(m.rows))
 	case "v":
 		m.startCursor()
+	case "e", "E":
+		return m.expandKey(k)
+	case "m":
+		m.toggleMarkdown()
 	case "left":
 		if m.treeWidth() > 0 {
 			m.focus, m.treeSel = focusTree, m.currentFile()
@@ -431,7 +475,7 @@ func (m *model) View() tea.View {
 	cur := m.currentFile()
 	curHeader := ""
 	if len(m.files) > 0 {
-		curHeader = fileHeader(t, m.files[cur], m.collapsed[cur], m.diffWidth(), true)
+		curHeader = fileHeader(t, m.files[cur], m.collapsed[cur], m.diffWidth(), true, fileNote(m.files[cur], m.collapsed[cur], m.MdSource))
 	}
 	for i := 0; i < h; i++ {
 		if r := m.off + i; r < len(m.rows) {
@@ -439,6 +483,7 @@ func (m *model) View() tea.View {
 			if m.rows[r].header && m.rows[r].file == cur {
 				diff[i] = curHeader
 			}
+			diff[i] = m.markHits(r, diff[i])
 		}
 	}
 	if len(m.starts) > 0 && m.off > m.starts[cur] && !m.collapsed[cur] {
@@ -528,6 +573,9 @@ func (m *model) View() tea.View {
 	foot := lipgloss.NewStyle().Foreground(t.Dim).Render(ansi.Truncate(" "+hints, m.width, "…"))
 	if m.flash != "" {
 		foot = lipgloss.NewStyle().Foreground(t.Accent).Render(" " + m.flash)
+	}
+	if s := m.searchFoot(); s != "" && m.flash == "" {
+		foot = s
 	}
 	if m.paneShown() && m.typing && !m.sideChat() && !m.away {
 		foot = m.inputLine(m.width)

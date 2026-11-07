@@ -35,6 +35,10 @@ type File struct {
 	Status     string // modified, added, deleted, renamed, binary
 	Adds, Dels int
 	Lines      []Line
+	// OldBlob, NewBlob: the git objects of both sides, from the index line
+	// (abbreviated; the new one may not exist for a working-tree diff).
+	OldBlob, NewBlob string
+	prepared         bool // words and syntax are marked (prepare)
 }
 
 // Path is the name to show: the new path, or the old one for deletions.
@@ -155,6 +159,10 @@ func Parse(r io.Reader) []*File {
 			f.Old = stripPrefix(strings.TrimPrefix(line, "--- "))
 		case strings.HasPrefix(line, "+++ "):
 			f.New = stripPrefix(strings.TrimPrefix(line, "+++ "))
+		case strings.HasPrefix(line, "index "):
+			if ids, _, _ := strings.Cut(strings.TrimPrefix(line, "index "), " "); strings.Contains(ids, "..") {
+				f.OldBlob, f.NewBlob, _ = strings.Cut(ids, "..")
+			}
 		case strings.HasPrefix(line, "new file mode"):
 			f.Status = "added"
 		case strings.HasPrefix(line, "deleted file mode"):
@@ -168,11 +176,19 @@ func Parse(r io.Reader) []*File {
 			f.Lines = append(f.Lines, Line{Kind: Note, Text: "Binary file not shown"})
 		}
 	}
-	for _, f := range files {
-		markWordChanges(f.Lines)
-	}
-	highlight(files)
 	return files
+}
+
+// prepare marks the changed words and the syntax of f's lines, once. It runs
+// when the file is first drawn, so the files of a big diff that stay
+// collapsed cost nothing.
+func (f *File) prepare() {
+	if f.prepared {
+		return
+	}
+	f.prepared = true
+	markWordChanges(f.Lines)
+	highlight(f)
 }
 
 // markWordChanges pairs each run of deleted lines with the run of added lines

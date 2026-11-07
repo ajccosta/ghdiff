@@ -159,7 +159,7 @@ func (m *model) codeView(w, h int, rule string) []string {
 	out := []string{rule}
 	if c.term != nil {
 		c.term.resize(w, h-1)
-		out = append(out, c.term.lines()...)
+		out = append(out, c.term.lines(m.termFocused())...)
 		if st := m.postStatus(w - 2); len(st) > 0 { // over Claude Code's last lines
 			st = st[max(0, len(st)-(h-1)):]
 			for i, l := range st {

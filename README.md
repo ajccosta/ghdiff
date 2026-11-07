@@ -138,6 +138,9 @@ title bar, and `GHDIFF_REPO`, `GHDIFF_PR`, `GHDIFF_COMMIT` and `GHDIFF_REPO_PATH
 Clicking a review comment's `path#L12` on the Activity tab also sets
 `GHDIFF_GOTO=path:RIGHT|LEFT:start:end`: ghdiff opens at those lines with
 them selected, and shows the review thread there as `T` is set.
+The code under each review comment on that tab is drawn by
+`ghdiff --render WIDTH [--mark SIDE:START:END] [--light]`, which prints the
+lines of the diff on stdin as the viewer draws them and exits.
 
 Opened from gh-dash, the left pane also has the PR's commits: `Tab` goes from
 the diff to Files, then to Commits, then back (or click their names on top).

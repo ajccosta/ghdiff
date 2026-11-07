@@ -6,6 +6,7 @@
 //	ghdiff --git [git diff args...]  view git diff in the current repo
 //	ghdiff --pr N [-R owner/repo]    view a pull request (gh pr diff)
 //	ghdiff --commit SHA [-R owner/repo]
+//	ghdiff --render WIDTH [--mark SIDE:START:END] [--light] < snippet.diff
 //
 // --title sets the title bar (default: $GHDIFF_TITLE). GHDIFF_GOTO=path:side:start:end
 // opens it at those lines, selected (see jump.go).
@@ -28,7 +29,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `usage: ghdiff [--title T] [file.diff]
        ghdiff [--title T] --git [git diff args...]
        ghdiff [--title T] --pr N [-R owner/repo]
-       ghdiff [--title T] --commit SHA [-R owner/repo]`)
+       ghdiff [--title T] --commit SHA [-R owner/repo]
+       ghdiff --render WIDTH [--mark SIDE:START:END] [--light]   (print stdin's diff lines and exit)`)
 	os.Exit(2)
 }
 
@@ -78,6 +80,12 @@ func main() {
 	switch {
 	case len(args) > 0 && (args[0] == "-h" || args[0] == "--help"):
 		usage()
+	case len(args) > 0 && args[0] == "--render":
+		if err := renderMain(args[1:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "ghdiff:", err)
+			os.Exit(2)
+		}
+		return
 	case len(args) > 0 && args[0] == "--git":
 		input = run("git", append([]string{"diff", "--no-color", "--no-ext-diff"}, args[1:]...)...)
 		if title == "" {

@@ -50,9 +50,13 @@ type rawThread struct {
 	StartLine     int    `json:"startLine"`
 	DiffSide      string `json:"diffSide"`
 	StartDiffSide string `json:"startDiffSide"`
+	OriginalLine  int    `json:"originalLine"`
+	OriginalStart int    `json:"originalStartLine"`
 	Comments      struct {
 		Nodes []struct {
-			DatabaseID int64     `json:"databaseId"`
+			Commit         struct{ Oid string } `json:"commit"`
+			OriginalCommit struct{ Oid string } `json:"originalCommit"`
+			DatabaseID     int64                `json:"databaseId"`
 			Body       string    `json:"body"`
 			CreatedAt  time.Time `json:"createdAt"`
 			Author     struct {
@@ -73,20 +77,20 @@ const threadsQuery = `query($owner: String!, $name: String!, $number: Int!) {
     pullRequest(number: $number) {
       reviewThreads(first: 100) {
         nodes {
-          isResolved isOutdated path line startLine diffSide startDiffSide
-          comments(first: 100) { nodes { databaseId body createdAt author { login } } }
+          isResolved isOutdated path line startLine diffSide startDiffSide originalLine originalStartLine
+          comments(first: 100) { nodes { commit { oid } originalCommit { oid } databaseId body createdAt author { login } } }
         }
       }
     }
   }
 }`
 
-// fetchThreads loads the review threads of a whole-PR diff; a single
-// commit's line numbers would not match GitHub's.
+// fetchThreads loads the PR's review threads (for a single commit's diff,
+// those written on it or on the PR's head when it is that commit: see at).
 func (m *model) fetchThreads() tea.Cmd {
 	t := m.target
 	owner, name, ok := strings.Cut(t.repo, "/")
-	if !ok || t.pr == 0 || t.commit != "" {
+	if !ok || t.pr == 0 {
 		return nil
 	}
 	return func() tea.Msg {
@@ -117,6 +121,27 @@ func (m *model) fetchThreads() tea.Cmd {
 	}
 }
 
+// at says whether the thread is on this diff, and leaves its lines in Line
+// and StartLine: a whole PR's (commit ""), or one commit's, where only the
+// new side's numbers are the file's own and so can be trusted.
+func (rt *rawThread) at(commit string) bool {
+	if commit == "" {
+		return !rt.IsOutdated && rt.Line != 0
+	}
+	if len(rt.Comments.Nodes) == 0 || rt.DiffSide == "LEFT" {
+		return false
+	}
+	c := rt.Comments.Nodes[0]
+	switch {
+	case strings.HasPrefix(c.Commit.Oid, commit) && !rt.IsOutdated && rt.Line != 0:
+	case strings.HasPrefix(c.OriginalCommit.Oid, commit) && rt.OriginalLine != 0:
+		rt.Line, rt.StartLine = rt.OriginalLine, rt.OriginalStart
+	default:
+		return false
+	}
+	return true
+}
+
 // findLine is the File.Lines index of a line by GitHub's side and number.
 func findLine(f *File, side string, n int) int {
 	for i, l := range f.Lines {
@@ -137,7 +162,7 @@ func (m *model) gotThreads(msg threadsMsg) {
 	}
 	m.threads = nil
 	for _, rt := range msg.threads {
-		if rt.IsOutdated || rt.Line == 0 || len(rt.Comments.Nodes) == 0 {
+		if !rt.at(m.target.commit) || len(rt.Comments.Nodes) == 0 {
 			continue
 		}
 		for fi, f := range m.files {
@@ -166,6 +191,7 @@ func (m *model) gotThreads(msg threadsMsg) {
 			m.threads = append(m.threads, t)
 		}
 	}
+	m.relayout()
 }
 
 // threadsAt are the review threads covering line li of file fi.
@@ -310,6 +336,7 @@ func (m *model) gotReply(msg replyMsg) {
 	t.comments = append(t.comments, msg.c)
 	t.note, t.noteErr = "", false
 	t.scroll = 1 << 30
+	m.relayout()
 }
 
 func (m *model) threadView(w, h int) []string {
@@ -396,5 +423,5 @@ func (m *model) threadHints() string {
 	if m.leftThread() {
 		layout = "t tree"
 	}
-	return "a reply · " + other + view + " · " + layout + " · T box or column · ^O diff · esc close"
+	return "a reply · " + other + view + " · " + layout + " · T where threads show · ^O diff · esc close"
 }
