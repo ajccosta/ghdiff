@@ -76,6 +76,7 @@ func newModel(files []*File, title string, raw []byte, t target) *model {
 	m.theme = themeFor(m.dark, m.truecolor)
 	m.loadConvos()
 	m.loadSettings()
+	m.openPane(os.Getenv("GHDIFF_PANE"))
 	return m
 }
 

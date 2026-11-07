@@ -47,6 +47,16 @@ func init() {
 
 func (m *model) leftPane() leftPane { return leftPanes[m.left] }
 
+// openPane starts with the keys in the left pane called name ("commits",
+// from gh-dash's All commits), when it can show.
+func (m *model) openPane(name string) {
+	for _, i := range m.availPanes() {
+		if strings.EqualFold(leftPanes[i].name, name) {
+			m.left, m.focus = i, focusTree
+		}
+	}
+}
+
 // availPanes are the indexes of the panes that can show now.
 func (m *model) availPanes() []int {
 	var out []int

@@ -56,3 +56,13 @@ func TestNoCommitsPaneWithoutGhDash(t *testing.T) {
 		t.Fatal("commits pane outside gh-dash")
 	}
 }
+
+func TestPaneEnvOpensCommits(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("GHDIFF_PANE", "commits")
+	m := newModel(Parse(strings.NewReader(twoFiles)), "t", []byte(twoFiles),
+		target{repo: "o/r", pr: 1, dash: true})
+	if m.focus != focusTree || m.leftPane().name != "Commits" {
+		t.Errorf("focus %v on %q, want the Commits pane", m.focus, m.leftPane().name)
+	}
+}

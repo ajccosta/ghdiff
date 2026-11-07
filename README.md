@@ -149,6 +149,8 @@ the diff to Files, then to Commits, then back (or click their names on top).
 fetched once each. Claude conversations follow their lines into the new diff,
 a running Claude Code with them; one whose lines are not in it stops, and
 resumes when it is opened again.
+`GHDIFF_PANE=commits` (gh-dash's "All commits") opens with the keys in the
+Commits pane.
 
 ## As git's diff pager
 
