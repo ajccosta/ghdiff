@@ -8,13 +8,15 @@ import (
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/mattn/go-runewidth"
 )
 
 // Markdown files are shown formatted (m shows their source, and back): each
 // source line stays one line, so the diff, its numbers and its colours hold,
 // but markers are dropped (# ** ` [](url)), headings, emphasis, code and
-// links are styled, lists get bullets, quotes a bar, tables lines, and code
-// blocks their language's colours. A new markdown form is one more case in
+// links are styled, lists get bullets, quotes a bar, tables lines with their
+// columns lined up, inline code a background, and code blocks their
+// language's colours. A new markdown form is one more case in
 // mdLine or one more alternative in mdInlineRe.
 
 func isMarkdown(f *File) bool {
@@ -37,7 +39,7 @@ const (
 )
 
 type tokStyle struct {
-	fg                              color.Color
+	fg, bg                          color.Color
 	bold, italic, underline, strike bool
 }
 
@@ -51,7 +53,7 @@ func (t Theme) tokStyle(tt chroma.TokenType) tokStyle {
 	case mdEmph:
 		return tokStyle{italic: true}
 	case mdCode:
-		return tokStyle{fg: t.ModFg}
+		return tokStyle{fg: t.ModFg, bg: t.CodeBg}
 	case mdLink:
 		return tokStyle{fg: t.Accent, underline: true}
 	case mdDim:
@@ -62,10 +64,12 @@ func (t Theme) tokStyle(tt chroma.TokenType) tokStyle {
 	return tokStyle{fg: t.syntaxColor(tt)}
 }
 
-// mdState is what one side's earlier lines leave open: a code block.
+// mdState is what one side's earlier lines leave open: a code block; and the
+// file's tables, so a row lines up with the others.
 type mdState struct {
-	fence string // "```" or "~~~" while inside a block
-	lexer chroma.Lexer
+	fence  string // "```" or "~~~" while inside a block
+	lexer  chroma.Lexer
+	tables map[string]*mdTable // by row text
 }
 
 // mdOut builds a formatted line and maps the source's bytes to its own.
@@ -110,7 +114,7 @@ var (
 	mdCommentRe = regexp.MustCompile(`^\s*<!--.*-->\s*$`)
 	// Inline forms, in the order they win at the same place; the group with
 	// the text to keep is named after its style.
-	mdInlineRe = regexp.MustCompile("`(?P<code>[^`]+)`" +
+	mdInlineRe = regexp.MustCompile("`` ?(?P<code2>.+?) ?``|`(?P<code>[^`]+)`" +
 		`|!\[(?P<image>[^\]]*)\]\([^)]*\)` +
 		`|\[(?P<link>[^\]]+)\]\([^)]*\)` +
 		`|<(?P<url>https?://[^>\s]+)>` +
@@ -118,7 +122,7 @@ var (
 		`|~~(?P<strike>[^~]+)~~` +
 		`|\*(?P<emph>[^*\s][^*]*)\*|\b_(?P<emph2>[^_]+)_\b`)
 	mdInlineType = map[string]chroma.TokenType{
-		"code": mdCode, "image": mdLink, "link": mdLink, "url": mdLink,
+		"code": mdCode, "code2": mdCode, "image": mdLink, "link": mdLink, "url": mdLink,
 		"strong": mdStrong, "strong2": mdStrong, "strike": mdStrike, "emph": mdEmph, "emph2": mdEmph,
 	}
 )
@@ -143,10 +147,123 @@ func (o *mdOut) inline(s string, i, j int, base chroma.TokenType) {
 			if base == mdHeading && tt != mdCode {
 				tt = mdHeading
 			}
+			if tt == mdCode { // padded, like GitHub's
+				o.add(" ", tt)
+			}
 			o.keep(s, i+m[2*g], i+m[2*g+1], tt)
+			if tt == mdCode {
+				o.add(" ", tt)
+			}
 		}
 		i += m[1]
 	}
+}
+
+// mdTable is a table's column widths (as shown) and alignments ('l', 'c', 'r').
+type mdTable struct {
+	width []int
+	align []byte
+}
+
+// tableCells are the byte ranges of a row's cells, spaces trimmed.
+func tableCells(s string) [][2]int {
+	var cells [][2]int
+	start := strings.IndexByte(s, '|') + 1
+	for k := start; k < len(s); k++ {
+		if s[k] != '|' || s[k-1] == '\\' {
+			continue
+		}
+		a, b := start, k
+		for a < b && s[a] == ' ' {
+			a++
+		}
+		for b > a && s[b-1] == ' ' {
+			b--
+		}
+		cells = append(cells, [2]int{a, b})
+		start = k + 1
+	}
+	return cells
+}
+
+// cellWidth is how wide s[i:j] shows once formatted.
+func cellWidth(s string, i, j int) int {
+	o := &mdOut{at: make([]int, len(s))}
+	o.inline(s, i, j, 0)
+	return runewidth.StringWidth(o.b.String())
+}
+
+// mdTables measures each run of table rows in lines, in diff order, so the
+// old and new rows of a table line up with each other too.
+func mdTables(lines []Line) map[string]*mdTable {
+	out := map[string]*mdTable{}
+	var block []string
+	flush := func() {
+		tb := &mdTable{}
+		for _, s := range block {
+			sep := mdTableSep.MatchString(s)
+			for c, r := range tableCells(s) {
+				for len(tb.width) <= c {
+					tb.width, tb.align = append(tb.width, 1), append(tb.align, 'l')
+				}
+				cell := s[r[0]:r[1]]
+				switch {
+				case !sep:
+					tb.width[c] = max(tb.width[c], cellWidth(s, r[0], r[1]))
+				case strings.HasPrefix(cell, ":") && strings.HasSuffix(cell, ":"):
+					tb.align[c] = 'c'
+				case strings.HasSuffix(cell, ":"):
+					tb.align[c] = 'r'
+				}
+			}
+			out[s] = tb
+		}
+		block = block[:0]
+	}
+	for _, l := range lines {
+		if l.Kind != Hunk && mdTableRe.MatchString(l.Text) {
+			block = append(block, l.Text)
+		} else if len(block) > 0 {
+			flush()
+		}
+	}
+	if len(block) > 0 {
+		flush()
+	}
+	return out
+}
+
+// tableRow draws a row with box lines, its cells padded to tb's widths (its
+// own when the row is not in a measured table); a separator row is a rule.
+func (o *mdOut) tableRow(s string, tb *mdTable) {
+	cells := tableCells(s)
+	if tb == nil {
+		tb = &mdTable{}
+		for _, r := range cells {
+			tb.width, tb.align = append(tb.width, cellWidth(s, r[0], r[1])), append(tb.align, 'l')
+		}
+	}
+	if mdTableSep.MatchString(s) {
+		for c, w := range tb.width {
+			o.add(map[bool]string{true: "├", false: "┼"}[c == 0]+strings.Repeat("─", w+2), mdDim)
+		}
+		o.add("┤", mdDim)
+		return
+	}
+	for c, w := range tb.width {
+		o.add("│ ", mdDim)
+		pad := w
+		if c < len(cells) {
+			pad -= cellWidth(s, cells[c][0], cells[c][1])
+		}
+		left := map[byte]int{'l': 0, 'c': pad / 2, 'r': pad}[tb.align[c]]
+		o.add(strings.Repeat(" ", left), 0)
+		if c < len(cells) {
+			o.inline(s, cells[c][0], cells[c][1], 0)
+		}
+		o.add(strings.Repeat(" ", pad-left)+" ", 0)
+	}
+	o.add("│", mdDim)
 }
 
 // mdLine is l formatted, with st carried to the next line on its side.
@@ -182,22 +299,7 @@ func mdLine(l Line, st *mdState) Line {
 	case mdRuleRe.MatchString(s):
 		o.add(strings.Repeat("─", 40), mdDim)
 	case mdTableRe.MatchString(s):
-		sep := mdTableSep.MatchString(s)
-		start := 0
-		for k := 0; k <= len(s); k++ {
-			if k < len(s) && (s[k] != '|' || k > 0 && s[k-1] == '\\') {
-				continue
-			}
-			if sep {
-				o.keep(s, start, k, mdDim)
-			} else {
-				o.inline(s, start, k, 0)
-			}
-			if k < len(s) {
-				o.add("│", mdDim)
-			}
-			start = k + 1
-		}
+		o.tableRow(s, st.tables[s])
 	default:
 		i := 0
 		for q := mdQuoteRe.FindStringIndex(s[i:]); q != nil; q = mdQuoteRe.FindStringIndex(s[i:]) {
@@ -267,8 +369,9 @@ func codeToks(lexer chroma.Lexer, s string) []tok {
 
 // mdFormatter formats a file's lines in diff order, keeping each side's
 // code-block state: context lines move both, - lines the old, + the new.
-func mdFormatter() func(Line) Line {
-	var old, new mdState
+func mdFormatter(lines []Line) func(Line) Line {
+	tables := mdTables(lines)
+	old, new := mdState{tables: tables}, mdState{tables: tables}
 	return func(l Line) Line {
 		switch l.Kind {
 		case Del:

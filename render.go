@@ -18,6 +18,7 @@ type Theme struct {
 	HunkBg, HunkFg            color.Color
 	HeadBg, Dim, Accent       color.Color
 	AddFg, DelFg, ModFg       color.Color
+	CodeBg                    color.Color   // inline code in markdown
 	Syntax                    *chroma.Style // code colours, nil for none
 }
 
@@ -39,7 +40,7 @@ func diffTheme(dark, truecolor bool) Theme {
 			DelBg: c("52"), DelWord: c("88"), DelGutter: c("52"),
 			HunkBg: c("17"), HunkFg: c("110"),
 			HeadBg: c("236"), Dim: c("244"), Accent: c("75"),
-			AddFg: c("71"), DelFg: c("203"), ModFg: c("178"),
+			AddFg: c("71"), DelFg: c("203"), ModFg: c("178"), CodeBg: c("237"),
 		}
 	}
 	if !truecolor {
@@ -48,7 +49,7 @@ func diffTheme(dark, truecolor bool) Theme {
 			DelBg: c("224"), DelWord: c("217"), DelGutter: c("224"),
 			HunkBg: c("195"), HunkFg: c("66"),
 			HeadBg: c("255"), Dim: c("245"), Accent: c("25"),
-			AddFg: c("28"), DelFg: c("160"), ModFg: c("136"),
+			AddFg: c("28"), DelFg: c("160"), ModFg: c("136"), CodeBg: c("254"),
 		}
 	}
 	if dark {
@@ -58,6 +59,7 @@ func diffTheme(dark, truecolor bool) Theme {
 			HunkBg: c("#121d2f"), HunkFg: c("#8b9eb8"),
 			HeadBg: c("#161b22"), Dim: c("#6e7681"), Accent: c("#58a6ff"),
 			AddFg: c("#3fb950"), DelFg: c("#f85149"), ModFg: c("#d29922"),
+			CodeBg: c("#343a42"),
 		}
 	}
 	return Theme{
@@ -66,6 +68,7 @@ func diffTheme(dark, truecolor bool) Theme {
 		HunkBg: c("#ddf4ff"), HunkFg: c("#57606a"),
 		HeadBg: c("#f6f8fa"), Dim: c("#8c959f"), Accent: c("#0969da"),
 		AddFg: c("#1a7f37"), DelFg: c("#cf222e"), ModFg: c("#9a6700"),
+		CodeBg: c("#eaeef2"),
 	}
 }
 
@@ -178,7 +181,7 @@ func buildRows(t Theme, files []*File, collapsed map[int]bool, width int, ex exp
 		f.prepare()
 		format := func(l Line) Line { return l }
 		if isMarkdown(f) && !ex.mdSource() {
-			format = mdFormatter()
+			format = mdFormatter(f.Lines)
 		}
 		// Lines the diff leaves out show under their @@ row, not selectable.
 		gap := func(li int) {
@@ -322,6 +325,9 @@ func renderLine(t Theme, l Line, nw, cw, width int) []string {
 			}
 			if ts := ch[i].ts; ts.fg != nil {
 				st = st.Foreground(ts.fg)
+			}
+			if ts := ch[i].ts; ts.bg != nil && !ch[i].hi {
+				st = st.Background(ts.bg)
 			}
 			if ts := ch[i].ts; ts.bold || ts.italic || ts.underline || ts.strike {
 				st = st.Bold(ts.bold).Italic(ts.italic).Underline(ts.underline).Strikethrough(ts.strike)
