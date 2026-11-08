@@ -181,7 +181,7 @@ func buildRows(t Theme, files []*File, collapsed map[int]bool, width int, ex exp
 		f.prepare()
 		format := func(l Line) Line { return l }
 		if isMarkdown(f) && !ex.mdSource() {
-			format = mdFormatter(f.Lines)
+			format = mdFormatter(f.Lines, cw-1)
 		}
 		// Lines the diff leaves out show under their @@ row, not selectable.
 		gap := func(li int) {

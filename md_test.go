@@ -27,7 +27,7 @@ func TestMarkdown_DropsMarkers(t *testing.T) {
 }
 
 func TestMarkdown_CodeBlockKeepsItsTextAndRulesItsFences(t *testing.T) {
-	format := mdFormatter(nil)
+	format := mdFormatter(nil, 0)
 	var got []string
 	for _, s := range []string{"```go", "x := **y**", "```", "**b**"} {
 		got = append(got, format(Line{Kind: Ctx, Text: s}).Text)
@@ -53,11 +53,31 @@ func TestMarkdown_TableColumnsLineUp(t *testing.T) {
 	for _, s := range src {
 		lines = append(lines, Line{Kind: Add, Text: s})
 	}
-	format := mdFormatter(lines)
+	format := mdFormatter(lines, 0)
 	want := []string{
 		"│ Name     │  id  │",
 		"├──────────┼──────┤",
 		"│ jemalloc │    7 │",
+	}
+	for i, l := range lines {
+		if got := format(l).Text; got != want[i] {
+			t.Errorf("row %d: got %q, want %q", i, got, want[i])
+		}
+	}
+}
+
+func TestMarkdown_WideTableWrapsInItsCells(t *testing.T) {
+	src := []string{"| Crash | Fix |", "|---|---|", "| a b c d e f | g |"}
+	var lines []Line
+	for _, s := range src {
+		lines = append(lines, Line{Kind: Add, Text: s})
+	}
+	format := mdFormatter(lines, 15)
+	// The widest column narrows to fit 15; a wrapped line but the last fills 15.
+	want := []string{
+		"│ Crash │ Fix │",
+		"├───────┼─────┤",
+		"│ a b c │ g   ││ d e f │     │",
 	}
 	for i, l := range lines {
 		if got := format(l).Text; got != want[i] {
@@ -71,7 +91,7 @@ func TestMarkdown_HunkStartingInACodeBlock(t *testing.T) {
 		"@@ -10,4 +10,7 @@ cmake ..\n make -j\n ```\n \n+| Target | Builds |\n+|---|---|\n+| `all` | **everything** |\n" +
 		" To use it, do:\n"
 	f := Parse(strings.NewReader(diff))[0]
-	format := mdFormatter(f.Lines)
+	format := mdFormatter(f.Lines, 0)
 	var got []string
 	for _, l := range f.Lines {
 		got = append(got, format(l).Text)

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
@@ -65,11 +66,12 @@ func (t Theme) tokStyle(tt chroma.TokenType) tokStyle {
 }
 
 // mdState is what one side's earlier lines leave open: a code block; and the
-// file's tables, so a row lines up with the others.
+// file's tables, so a row lines up with the others, and the width they fit.
 type mdState struct {
 	fence  string // "```" or "~~~" while inside a block
 	lexer  chroma.Lexer
 	tables map[string]*mdTable // by row text
+	width  int                 // 0: no limit
 }
 
 // mdOut builds a formatted line and maps the source's bytes to its own.
@@ -93,6 +95,22 @@ func (o *mdOut) keep(s string, i, j int, tt chroma.TokenType) {
 		o.b.WriteByte(s[k])
 	}
 	o.style(from, tt)
+}
+
+// splice copies bytes [from, to) of c, which formatted the same source.
+func (o *mdOut) splice(c *mdOut, from, to int) {
+	base := o.b.Len()
+	o.b.WriteString(c.b.String()[from:to])
+	for _, t := range c.toks {
+		if a, b := max(t.From, from), min(t.To, to); a < b {
+			o.toks = append(o.toks, tok{base + a - from, base + b - from, t.Type})
+		}
+	}
+	for k, v := range c.at {
+		if v >= from && v < to {
+			o.at[k] = base + v - from
+		}
+	}
 }
 
 // add writes text that is not in the source.
@@ -195,9 +213,29 @@ func cellWidth(s string, i, j int) int {
 	return runewidth.StringWidth(o.b.String())
 }
 
+// fit narrows the widest columns until a row is at most width wide.
+func (tb *mdTable) fit(width int) {
+	if width <= 0 {
+		return
+	}
+	for {
+		total, wide := 1, 0
+		for c, w := range tb.width {
+			total += w + 3
+			if w > tb.width[wide] {
+				wide = c
+			}
+		}
+		if total <= width || tb.width[wide] <= 1 {
+			return
+		}
+		tb.width[wide]--
+	}
+}
+
 // mdTables measures each run of table rows in lines, in diff order, so the
-// old and new rows of a table line up with each other too.
-func mdTables(lines []Line) map[string]*mdTable {
+// old and new rows of a table line up with each other too, and fits it to width.
+func mdTables(lines []Line, width int) map[string]*mdTable {
 	out := map[string]*mdTable{}
 	var block []string
 	flush := func() {
@@ -220,6 +258,7 @@ func mdTables(lines []Line) map[string]*mdTable {
 			}
 			out[s] = tb
 		}
+		tb.fit(width)
 		block = block[:0]
 	}
 	for _, l := range lines {
@@ -236,14 +275,17 @@ func mdTables(lines []Line) map[string]*mdTable {
 }
 
 // tableRow draws a row with box lines, its cells padded to tb's widths (its
-// own when the row is not in a measured table); a separator row is a rule.
-func (o *mdOut) tableRow(s string, tb *mdTable) {
+// own when the row is not in a measured table) and wrapped in them; a
+// separator row is a rule. A wrapped row's lines but the last are padded to
+// width, so the renderer's own wrapping puts each on a line of its own.
+func (o *mdOut) tableRow(s string, tb *mdTable, width int) {
 	cells := tableCells(s)
 	if tb == nil {
 		tb = &mdTable{}
 		for _, r := range cells {
 			tb.width, tb.align = append(tb.width, cellWidth(s, r[0], r[1])), append(tb.align, 'l')
 		}
+		tb.fit(width)
 	}
 	if mdTableSep.MatchString(s) {
 		for c, w := range tb.width {
@@ -252,20 +294,75 @@ func (o *mdOut) tableRow(s string, tb *mdTable) {
 		o.add("┤", mdDim)
 		return
 	}
+	outs := make([]*mdOut, len(tb.width))
+	lines := make([][][2]int, len(tb.width))
+	rows := 1
 	for c, w := range tb.width {
-		o.add("│ ", mdDim)
-		pad := w
-		if c < len(cells) {
-			pad -= cellWidth(s, cells[c][0], cells[c][1])
+		outs[c] = &mdOut{at: make([]int, len(s))}
+		for k := range outs[c].at {
+			outs[c].at[k] = -1
 		}
-		left := map[byte]int{'l': 0, 'c': pad / 2, 'r': pad}[tb.align[c]]
-		o.add(strings.Repeat(" ", left), 0)
 		if c < len(cells) {
-			o.inline(s, cells[c][0], cells[c][1], 0)
+			outs[c].inline(s, cells[c][0], cells[c][1], 0)
 		}
-		o.add(strings.Repeat(" ", pad-left)+" ", 0)
+		lines[c] = wrapCell(outs[c].b.String(), w)
+		rows = max(rows, len(lines[c]))
 	}
-	o.add("│", mdDim)
+	for r := 0; r < rows; r++ {
+		start := o.b.Len()
+		for c, w := range tb.width {
+			o.add("│ ", mdDim)
+			pad, seg := w, [2]int{}
+			if r < len(lines[c]) {
+				seg = lines[c][r]
+				pad -= runewidth.StringWidth(outs[c].b.String()[seg[0]:seg[1]])
+			}
+			left := map[byte]int{'l': 0, 'c': pad / 2, 'r': pad}[tb.align[c]]
+			o.add(strings.Repeat(" ", left), 0)
+			o.splice(outs[c], seg[0], seg[1])
+			o.add(strings.Repeat(" ", pad-left)+" ", 0)
+		}
+		o.add("│", mdDim)
+		if used := runewidth.StringWidth(o.b.String()[start:]); r < rows-1 && used < width {
+			o.add(strings.Repeat(" ", width-used), 0)
+		}
+	}
+}
+
+// wrapCell splits s into lines at most w wide, at spaces where it can; the
+// byte ranges leave out the spaces they break at.
+func wrapCell(s string, w int) [][2]int {
+	var out [][2]int
+	start := 0
+	for {
+		end, brk, used := start, -1, 0
+		for end < len(s) {
+			r, n := utf8.DecodeRuneInString(s[end:])
+			if used += runewidth.RuneWidth(r); used > w {
+				break
+			}
+			if r == ' ' {
+				brk = end
+			}
+			end += n
+		}
+		if end == len(s) {
+			return append(out, [2]int{start, end})
+		}
+		if s[end] != ' ' && brk > start {
+			end = brk
+		}
+		if end == start { // a rune wider than the column
+			_, n := utf8.DecodeRuneInString(s[end:])
+			end += n
+		}
+		out = append(out, [2]int{start, start + len(strings.TrimRight(s[start:end], " "))})
+		for start = end; start < len(s) && s[start] == ' '; start++ {
+		}
+		if start == len(s) {
+			return out
+		}
+	}
 }
 
 // mdLine is l formatted, with st carried to the next line on its side.
@@ -307,7 +404,7 @@ func mdLine(l Line, st *mdState) Line {
 	case mdRuleRe.MatchString(s):
 		o.add(strings.Repeat("─", 40), mdDim)
 	case mdTableRe.MatchString(s):
-		o.tableRow(s, st.tables[s])
+		o.tableRow(s, st.tables[s], st.width)
 	default:
 		i := 0
 		for q := mdQuoteRe.FindStringIndex(s[i:]); q != nil; q = mdQuoteRe.FindStringIndex(s[i:]) {
@@ -379,9 +476,10 @@ func codeToks(lexer chroma.Lexer, s string) []tok {
 // code-block state: context lines move both, - lines the old, + the new.
 // Where a side skips lines (a hunk with the lines above it hidden), its state
 // is mdStartsInBlock's guess for that hunk.
-func mdFormatter(lines []Line) func(Line) Line {
-	tables := mdTables(lines)
-	old, new := mdState{tables: tables}, mdState{tables: tables}
+// mdFormatter formats a file's lines in diff order; tables fit width.
+func mdFormatter(lines []Line, width int) func(Line) Line {
+	tables := mdTables(lines, width)
+	old, new := mdState{tables: tables, width: width}, mdState{tables: tables, width: width}
 	var guesses [][2]bool // per hunk: old, new side starts in a block
 	for i, l := range lines {
 		if l.Kind != Hunk {
