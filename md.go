@@ -279,7 +279,7 @@ func mdLine(l Line, st *mdState) Line {
 	case st.fence != "":
 		if fm != nil && strings.HasPrefix(fm[1], st.fence) {
 			st.fence = ""
-			o.keep(s, 0, len(s), mdDim)
+			o.add("───", mdDim)
 			break
 		}
 		o.keep(s, 0, len(s), 0)
@@ -295,7 +295,13 @@ func mdLine(l Line, st *mdState) Line {
 		if lx := lexers.Get(fm[2]); fm[2] != "" && lx != nil {
 			st.lexer = chroma.Coalesce(lx)
 		}
-		o.keep(s, 0, len(s), mdDim)
+		// A rule, with the block's language if it names one, for the fence.
+		o.add("───", mdDim)
+		if fm[2] != "" {
+			o.add(" ", mdDim)
+			lang := strings.Index(s, fm[2])
+			o.keep(s, lang, lang+len(fm[2]), mdDim)
+		}
 	case mdCommentRe.MatchString(s):
 		o.keep(s, 0, len(s), mdDim)
 	case mdRuleRe.MatchString(s):

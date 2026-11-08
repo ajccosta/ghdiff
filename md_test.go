@@ -26,13 +26,13 @@ func TestMarkdown_DropsMarkers(t *testing.T) {
 	}
 }
 
-func TestMarkdown_CodeBlockKeepsItsText(t *testing.T) {
+func TestMarkdown_CodeBlockKeepsItsTextAndRulesItsFences(t *testing.T) {
 	format := mdFormatter(nil)
 	var got []string
 	for _, s := range []string{"```go", "x := **y**", "```", "**b**"} {
 		got = append(got, format(Line{Kind: Ctx, Text: s}).Text)
 	}
-	want := []string{"```go", "x := **y**", "```", "b"}
+	want := []string{"─── go", "x := **y**", "───", "b"}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("line %d: got %q, want %q", i, got[i], want[i])
