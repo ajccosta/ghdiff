@@ -22,6 +22,11 @@ Keys: `↑↓`/`jk` scroll · `space`/`b` page · `n`/`p` next/previous file ·
 `←` or `Tab` file tree (`↑↓` pick, `Enter`/`→` open) · `c` collapse file ·
 `C` collapse all · `t` hide tree · `h` or `?` help · `q` quit.
 
+`|` shows the diff side by side, old on the left and new on the right, as
+VS Code does (remembered; `GHDIFF_SPLIT=1` opens that way once). A conflict
+(git's `<<<<<<<` `=======` `>>>>>>>` markers) then shows its current version
+beside the incoming one.
+
 The current file's header is highlighted, like its name in the tree; `n`/`p`,
 scrolling, the tree and clicking a header all move it.
 

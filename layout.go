@@ -293,6 +293,7 @@ Diff
   e / E       show the lines an @@ hides (at the cursor) / all in the file
   /           search (n / N next / previous match, esc clears)
   m           markdown files: formatted / source
+  |           side by side / unified (a conflict: current | incoming)
   t / tab     hide the left pane / move to it (tab again: the next one)
   s           Claude pane beside or below the diff
   q           quit

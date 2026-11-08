@@ -19,6 +19,8 @@ type Theme struct {
 	HeadBg, Dim, Accent       color.Color
 	AddFg, DelFg, ModFg       color.Color
 	CodeBg                    color.Color   // inline code in markdown
+	CurBg, CurHead            color.Color   // a conflict's current side (split.go)
+	IncBg, IncHead            color.Color   // and its incoming side
 	Syntax                    *chroma.Style // code colours, nil for none
 }
 
@@ -41,6 +43,7 @@ func diffTheme(dark, truecolor bool) Theme {
 			HunkBg: c("17"), HunkFg: c("110"),
 			HeadBg: c("236"), Dim: c("244"), Accent: c("75"),
 			AddFg: c("71"), DelFg: c("203"), ModFg: c("178"), CodeBg: c("237"),
+			CurBg: c("22"), CurHead: c("28"), IncBg: c("17"), IncHead: c("25"),
 		}
 	}
 	if !truecolor {
@@ -50,6 +53,7 @@ func diffTheme(dark, truecolor bool) Theme {
 			HunkBg: c("195"), HunkFg: c("66"),
 			HeadBg: c("255"), Dim: c("245"), Accent: c("25"),
 			AddFg: c("28"), DelFg: c("160"), ModFg: c("136"), CodeBg: c("254"),
+			CurBg: c("194"), CurHead: c("157"), IncBg: c("195"), IncHead: c("153"),
 		}
 	}
 	if dark {
@@ -60,6 +64,7 @@ func diffTheme(dark, truecolor bool) Theme {
 			HeadBg: c("#161b22"), Dim: c("#6e7681"), Accent: c("#58a6ff"),
 			AddFg: c("#3fb950"), DelFg: c("#f85149"), ModFg: c("#d29922"),
 			CodeBg: c("#343a42"),
+			CurBg:  c("#16302a"), CurHead: c("#25553f"), IncBg: c("#152238"), IncHead: c("#264a7a"),
 		}
 	}
 	return Theme{
@@ -69,6 +74,7 @@ func diffTheme(dark, truecolor bool) Theme {
 		HeadBg: c("#f6f8fa"), Dim: c("#8c959f"), Accent: c("#0969da"),
 		AddFg: c("#1a7f37"), DelFg: c("#cf222e"), ModFg: c("#9a6700"),
 		CodeBg: c("#eaeef2"),
+		CurBg:  c("#e3f6ea"), CurHead: c("#bfe8cf"), IncBg: c("#e3eefc"), IncHead: c("#bcd6f7"),
 	}
 }
 
@@ -88,6 +94,7 @@ type expander interface {
 	gap(fi, li int) []Line
 	expandLabel(fi, li int) string
 	mdSource() bool                     // markdown files show their source, not formatted (md.go)
+	split() bool                        // old and new side by side (split.go)
 	under(fi, li, col, width int) []row // rows drawn under line li (threadinline.go)
 }
 
@@ -184,32 +191,44 @@ func buildRows(t Theme, files []*File, collapsed map[int]bool, width int, ex exp
 			format = mdFormatter(f.Lines, cw-1)
 		}
 		// Lines the diff leaves out show under their @@ row, not selectable.
-		gap := func(li int) {
+		gap := func(li int) []row {
+			var out []row
 			for _, g := range ex.gap(fi, li) {
 				g = format(g)
+				if ex.split() {
+					for _, text := range splitLine(t, &g, &g, nw, width-1, nil, nil) {
+						out = append(out, row{file: fi, line: -1, col: 1 + nw + 4, text: " " + text})
+					}
+					continue
+				}
 				for _, text := range renderLine(t, g, nw, cw-1, width-1) {
-					rows = append(rows, row{file: fi, line: -1, col: 1 + gutterW, text: " " + text})
+					out = append(out, row{file: fi, line: -1, col: 1 + gutterW, text: " " + text})
 				}
 			}
+			return out
 		}
-		for li, l := range f.Lines {
-			if lab := ex.expandLabel(fi, li); lab != "" && l.Kind == Hunk {
-				l.Text = lab + "  " + l.Text
-			}
-			l = format(l)
-			// One spare column on the left for the selection bar.
-			for _, text := range renderLine(t, l, nw, cw-1, width-1) {
-				rows = append(rows, row{file: fi, line: li, col: 1 + gutterW, text: " " + text})
-			}
-			rows = append(rows, ex.under(fi, li, 1+gutterW, width)...)
-			if l.Kind == Hunk {
-				gap(li)
+		if ex.split() {
+			rows = splitRows(rows, t, f, fi, nw, width, format, ex, gap)
+		} else {
+			for li, l := range f.Lines {
+				if lab := ex.expandLabel(fi, li); lab != "" && l.Kind == Hunk {
+					l.Text = lab + "  " + l.Text
+				}
+				l = format(l)
+				// One spare column on the left for the selection bar.
+				for _, text := range renderLine(t, l, nw, cw-1, width-1) {
+					rows = append(rows, row{file: fi, line: li, col: 1 + gutterW, text: " " + text})
+				}
+				rows = append(rows, ex.under(fi, li, 1+gutterW, width)...)
+				if l.Kind == Hunk {
+					rows = append(rows, gap(li)...)
+				}
 			}
 		}
 		if lab := ex.expandLabel(fi, len(f.Lines)); lab != "" {
 			text := renderLine(t, Line{Kind: Hunk, Text: lab}, nw, cw-1, width-1)[0]
 			rows = append(rows, row{file: fi, line: -1, tail: true, col: 1 + gutterW, text: " " + text})
-			gap(len(f.Lines))
+			rows = append(rows, gap(len(f.Lines))...)
 		}
 		rows = append(rows, row{file: fi, line: -1})
 	}
@@ -217,6 +236,12 @@ func buildRows(t Theme, files []*File, collapsed map[int]bool, width int, ex exp
 }
 
 func renderLine(t Theme, l Line, nw, cw, width int) []string {
+	return renderNums(t, l, []int{l.Old, l.New}, nw, cw, width, nil)
+}
+
+// renderNums draws l after the line numbers nums, each nw wide, wrapped to
+// cw columns of text and padded to width. A bg replaces the line's own.
+func renderNums(t Theme, l Line, nums []int, nw, cw, width int, bg color.Color) []string {
 	num := func(n int) string {
 		if n == 0 {
 			return strings.Repeat(" ", nw)
@@ -224,14 +249,15 @@ func renderLine(t Theme, l Line, nw, cw, width int) []string {
 		return fmt.Sprintf("%*d", nw, n)
 	}
 
+	gutterW := len(nums)*(nw+1) + 3 // the numbers, then " s "
 	switch l.Kind {
 	case Hunk:
 		s := lipgloss.NewStyle().Background(t.HunkBg).Foreground(t.HunkFg)
-		text := ansi.Truncate(strings.Repeat(" ", 2*nw+5)+l.Text, width, "…")
+		text := ansi.Truncate(strings.Repeat(" ", gutterW)+l.Text, width, "…")
 		return []string{s.Render(text + strings.Repeat(" ", max(0, width-ansi.StringWidth(text))))}
 	case Note:
 		s := lipgloss.NewStyle().Foreground(t.Dim).Italic(true)
-		return []string{s.Render(strings.Repeat(" ", 2*nw+5) + l.Text)}
+		return []string{s.Render(strings.Repeat(" ", gutterW) + l.Text)}
 	}
 
 	var lineBg, wordBg, gutterBg color.Color
@@ -242,6 +268,9 @@ func renderLine(t Theme, l Line, nw, cw, width int) []string {
 		lineBg, wordBg, gutterBg, sign, signFg = t.AddBg, t.AddWord, t.AddGutter, "+", t.AddFg
 	case Del:
 		lineBg, wordBg, gutterBg, sign, signFg = t.DelBg, t.DelWord, t.DelGutter, "-", t.DelFg
+	}
+	if bg != nil {
+		lineBg, gutterBg = bg, bg
 	}
 	base := lipgloss.NewStyle()
 	gutter := lipgloss.NewStyle().Foreground(t.Dim)
@@ -304,13 +333,17 @@ func renderLine(t Theme, l Line, nw, cw, width int) []string {
 	for ci, ch := range chunks {
 		var b strings.Builder
 		if ci == 0 {
-			b.WriteString(gutter.Render(num(l.Old) + " " + num(l.New) + " "))
+			var ns strings.Builder
+			for _, n := range nums {
+				ns.WriteString(num(n) + " ")
+			}
+			b.WriteString(gutter.Render(ns.String()))
 			b.WriteString(signStyle.Render(" " + sign + " "))
 		} else {
-			b.WriteString(gutter.Render(strings.Repeat(" ", 2*nw+2)))
+			b.WriteString(gutter.Render(strings.Repeat(" ", gutterW-3)))
 			b.WriteString(base.Render("   "))
 		}
-		used := 2*nw + 5
+		used := gutterW
 		for i := 0; i < len(ch); {
 			j := i
 			var seg strings.Builder

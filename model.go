@@ -56,6 +56,7 @@ type model struct {
 	ThreadView threadMode // where review threads show (threadview.go)
 	Claude     string     // how new conversations run Claude (code.go)
 	MdSource   bool       // markdown files show their source (md.go)
+	Split      bool       // old and new side by side (split.go)
 	mouse      hover
 	pop        popup
 }
@@ -76,6 +77,9 @@ func newModel(files []*File, title string, raw []byte, t target) *model {
 	m.theme = themeFor(m.dark, m.truecolor)
 	m.loadConvos()
 	m.loadSettings()
+	if os.Getenv("GHDIFF_SPLIT") == "1" { // this time only
+		m.Split = true
+	}
 	m.openPane(os.Getenv("GHDIFF_PANE"))
 	return m
 }
@@ -419,6 +423,8 @@ func (m *model) key(k string) tea.Cmd {
 		return m.expandKey(k)
 	case "m":
 		m.toggleMarkdown()
+	case "|":
+		m.toggleSplit()
 	case "left":
 		if m.treeWidth() > 0 {
 			m.focus, m.treeSel = focusTree, m.currentFile()
