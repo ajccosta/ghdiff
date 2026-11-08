@@ -112,6 +112,8 @@ var (
 	mdTableRe   = regexp.MustCompile(`^\s*\|.*\|\s*$`)
 	mdTableSep  = regexp.MustCompile(`^[\s|:-]+$`)
 	mdCommentRe = regexp.MustCompile(`^\s*<!--.*-->\s*$`)
+	// A line of a sentence: a capitalised word and four more, none code-like.
+	mdProseRe = regexp.MustCompile(`^[A-Z][a-z']*(\s+[^\s;{}=<>$]+){4,}\s*$`)
 	// Inline forms, in the order they win at the same place; the group with
 	// the text to keep is named after its style.
 	mdInlineRe = regexp.MustCompile("`` ?(?P<code2>.+?) ?``|`(?P<code>[^`]+)`" +
@@ -369,16 +371,53 @@ func codeToks(lexer chroma.Lexer, s string) []tok {
 
 // mdFormatter formats a file's lines in diff order, keeping each side's
 // code-block state: context lines move both, - lines the old, + the new.
+// Where a side skips lines (a hunk with the lines above it hidden), its state
+// is mdStartsInBlock's guess for that hunk.
 func mdFormatter(lines []Line) func(Line) Line {
 	tables := mdTables(lines)
 	old, new := mdState{tables: tables}, mdState{tables: tables}
+	var guesses [][2]bool // per hunk: old, new side starts in a block
+	for i, l := range lines {
+		if l.Kind != Hunk {
+			continue
+		}
+		var o, n []string
+		for _, h := range lines[i+1:] {
+			if h.Kind == Hunk {
+				break
+			}
+			if h.Kind != Add {
+				o = append(o, h.Text)
+			}
+			if h.Kind != Del {
+				n = append(n, h.Text)
+			}
+		}
+		guesses = append(guesses, [2]bool{mdStartsInBlock(o), mdStartsInBlock(n)})
+	}
+	hunk, lastOld, lastNew := -1, 0, 0
+	resume := func(st *mdState, no int, last *int, side int) {
+		if no != *last+1 && hunk >= 0 && hunk < len(guesses) {
+			st.fence, st.lexer = "", nil
+			if guesses[hunk][side] {
+				st.fence = "```"
+			}
+		}
+		*last = no
+	}
 	return func(l Line) Line {
 		switch l.Kind {
+		case Hunk:
+			hunk++
 		case Del:
+			resume(&old, l.Old, &lastOld, 0)
 			return mdLine(l, &old)
 		case Add:
+			resume(&new, l.New, &lastNew, 1)
 			return mdLine(l, &new)
 		case Ctx:
+			resume(&old, l.Old, &lastOld, 0)
+			resume(&new, l.New, &lastNew, 1)
 			o := old
 			out := mdLine(l, &new)
 			mdLine(l, &o)
@@ -387,6 +426,37 @@ func mdFormatter(lines []Line) func(Line) Line {
 		}
 		return l
 	}
+}
+
+// mdStartsInBlock guesses whether one side's lines of a hunk, ss, start
+// inside a code block: the reading under which fewer of them look misplaced.
+func mdStartsInBlock(ss []string) bool {
+	return mdMisfits(ss, true) < mdMisfits(ss, false)
+}
+
+// mdMisfits counts what looks wrong if ss starts in a block or not: a closing
+// fence with a language, a blank line just inside an opening one, and prose
+// or table rows inside a block.
+func mdMisfits(ss []string, inside bool) int {
+	n := 0
+	for i, s := range ss {
+		fm := mdFenceRe.FindStringSubmatch(s)
+		switch {
+		case fm != nil && inside:
+			if fm[2] != "" {
+				n += 2
+			}
+			inside = false
+		case fm != nil:
+			if i+1 < len(ss) && strings.TrimSpace(ss[i+1]) == "" {
+				n++
+			}
+			inside = true
+		case inside && (mdProseRe.MatchString(s) || mdTableRe.MatchString(s)):
+			n++
+		}
+	}
+	return n
 }
 
 // mdNote is a markdown file's header note: how it shows, and m to switch.

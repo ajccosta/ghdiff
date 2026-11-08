@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestMarkdown_DropsMarkers(t *testing.T) {
 	cases := map[string]string{
@@ -60,5 +63,20 @@ func TestMarkdown_TableColumnsLineUp(t *testing.T) {
 		if got := format(l).Text; got != want[i] {
 			t.Errorf("row %d: got %q, want %q", i, got, want[i])
 		}
+	}
+}
+
+func TestMarkdown_HunkStartingInACodeBlock(t *testing.T) {
+	diff := "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n" +
+		"@@ -10,4 +10,7 @@ cmake ..\n make -j\n ```\n \n+| Target | Builds |\n+|---|---|\n+| `all` | **everything** |\n" +
+		" To use it, do:\n"
+	f := Parse(strings.NewReader(diff))[0]
+	format := mdFormatter(f.Lines)
+	var got []string
+	for _, l := range f.Lines {
+		got = append(got, format(l).Text)
+	}
+	if want := "│  all   │ everything │"; got[6] != want {
+		t.Errorf("the table after the block's end: got %q, want %q", got[6], want)
 	}
 }
