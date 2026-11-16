@@ -28,7 +28,7 @@ func (m *model) notesAt(fi, li int) []note {
 		out = append(out, threadNote{t})
 	}
 	for _, c := range m.convos {
-		if s := c.spans[0]; s.file == fi && s.lo == li && len(c.turns) > 0 {
+		if f, l := (convoNote{c}).at(); f == fi && l == li && len(c.turns) > 0 {
 			out = append(out, convoNote{c})
 		}
 	}
@@ -73,7 +73,13 @@ func (n threadNote) open(m *model, same []note) {
 
 type convoNote struct{ c *convo }
 
-func (n convoNote) at() (int, int) { return n.c.spans[0].file, n.c.spans[0].lo }
+// at is -1, -1 for a conversation on the whole diff: on no line.
+func (n convoNote) at() (int, int) {
+	if len(n.c.spans) == 0 {
+		return -1, -1
+	}
+	return n.c.spans[0].file, n.c.spans[0].lo
+}
 
 func (n convoNote) title(m *model) string {
 	s := "Claude · " + m.spansLabel(n.c.spans) + " · " + n.c.created.Local().Format("Jan 2 15:04")

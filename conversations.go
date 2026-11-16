@@ -39,9 +39,9 @@ func (m *model) noteLines(w, h int) []string {
 	dim := lipgloss.NewStyle().Foreground(t.Dim)
 	ns := m.allNotes()
 	if len(ns) == 0 {
-		s := "No conversations on this diff. Select lines (v) and press a to ask Claude about them."
+		s := "No conversations on this diff. Press a to ask Claude about it, or select lines (v) first."
 		if m.target.pr > 0 {
-			s = "No review comments or Claude conversations on this diff. Select lines (v) and press a to ask Claude, or c to comment."
+			s = "No review comments or Claude conversations on this diff. Press a to ask Claude about it, or select lines (v) first to ask about them or comment (c)."
 		}
 		return wrapRows(dim, s, w, h)
 	}
@@ -54,11 +54,10 @@ func (m *model) noteLines(w, h int) []string {
 			break
 		}
 		n := ns[e]
-		fi, lo := n.at()
 		text, when := n.summary()
-		place, right := m.shortRange(fi, lo, lo), ago(when)
+		place, right := "", ago(when)
 		if tn, ok := n.(threadNote); ok {
-			place = m.shortRange(fi, tn.t.lo, tn.t.hi)
+			place = m.shortRange(tn.t.file, tn.t.lo, tn.t.hi)
 			if tn.t.resolved {
 				right = "resolved · " + right
 			}

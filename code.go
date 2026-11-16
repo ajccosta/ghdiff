@@ -191,8 +191,8 @@ func (m *model) codeView(w, h int, rule string) []string {
 // and where it runs, as part of its system prompt.
 func (m *model) codePrompt(c *convo) string {
 	return "You are running inside ghdiff, a terminal diff viewer, in a pane beside a code diff the user is " +
-		"reviewing. They selected some lines (maybe several ranges, in different files) and will ask about " +
-		"them or ask you to work on them.\n" + m.diffContext(c, "")
+		"reviewing. " + selectedWhat(c, "will ask about them or ask you to work on them", "questions or work") +
+		"\n" + m.diffContext(c, "")
 }
 
 // The transcript Claude Code keeps of a session, under ~/.claude/projects.

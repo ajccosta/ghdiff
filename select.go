@@ -171,6 +171,9 @@ func (m *model) moveCursor(d int) {
 
 // showCursor keeps the cursor's rows on screen, clear of the sticky header.
 func (m *model) showCursor() {
+	if !m.sel.on {
+		return
+	}
 	c := m.sel.cursor
 	if top := m.firstRow(c.file, c.line); top >= 0 && top < m.off+1 {
 		m.off = top - 1
@@ -197,10 +200,8 @@ func (m *model) selectKey(k string) (bool, tea.Cmd) {
 		m.moveCursor(-1)
 	case "down", "j":
 		m.moveCursor(1)
-	case "a":
-		if spans := m.selSpans(); len(spans) > 0 {
-			m.newChat(spans)
-		}
+	case "a": // with only the cursor, about the whole diff
+		m.newChat(m.selSpans())
 	case "o":
 		if cs := m.convosAt(c.file, c.line); len(cs) > 0 {
 			m.openChats(cs)

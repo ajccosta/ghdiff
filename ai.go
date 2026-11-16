@@ -468,7 +468,7 @@ const maxDiffContext = 400_000
 
 func (m *model) firstPrompt(c *convo, q string) string {
 	return "You are helping someone review a code diff in a terminal diff viewer. " +
-		"They selected some lines (maybe several ranges, in different files) and have a question about them. Answer concisely; your Markdown is rendered " +
+		selectedWhat(c, "have a question about them", "a question") + " Answer concisely; your Markdown is rendered " +
 		"in a terminal pane about 100 columns wide, so prefer short paragraphs, lists and code blocks over " +
 		"headings and wide tables.\n" + m.diffContext(c, q)
 }
@@ -516,6 +516,15 @@ func (m *model) diffContext(c *convo, q string) string {
 	return b.String()
 }
 
+// selectedWhat tells Claude what the user selected and what they will do
+// with it (verb), or that they selected nothing and have one of what.
+func selectedWhat(c *convo, verb, what string) string {
+	if len(c.spans) == 0 {
+		return "They selected no lines: they have " + what + " about the diff as a whole, or anything else."
+	}
+	return "They selected some lines (maybe several ranges, in different files) and " + verb + "."
+}
+
 func lineNo(n int) string {
 	if n == 0 {
 		return "-"
@@ -559,8 +568,12 @@ func (m *model) paneRule(w int, title, details string, fg color.Color) string {
 	return rule + dim.Render(strings.Repeat("─", max(0, w-ansi.StringWidth(rule)-ansi.StringWidth(right)))+right)
 }
 
-// spansLabel is shortRange's for the first range, "+ 2 more" for the rest.
+// spansLabel is shortRange's for the first range, "+ 2 more" for the rest;
+// "the whole diff" for none.
 func (m *model) spansLabel(spans []span) string {
+	if len(spans) == 0 {
+		return "the whole diff"
+	}
 	s := m.shortRange(spans[0].file, spans[0].lo, spans[0].hi)
 	if n := len(spans) - 1; n > 0 {
 		s += fmt.Sprintf(" + %d more", n)

@@ -14,7 +14,7 @@ import (
 // one more entry.
 type leftPane struct {
 	name  string
-	hints string // the footer's while it has the keys
+	hints string // the footer's while it has the keys, before the keys every pane has
 	avail func(m *model) bool
 	view  func(m *model, w, h int) []string // h rows, w wide
 	key   func(m *model, k string) tea.Cmd  // a key while it has the focus
@@ -29,7 +29,7 @@ func init() {
 	leftPanes = []leftPane{
 		{
 			name:  "Files",
-			hints: "enter open · c collapse · tab next pane · q quit",
+			hints: "enter open · c collapse",
 			avail: func(*model) bool { return true },
 			view:  (*model).treeLines,
 			key:   (*model).treeKey,
@@ -38,7 +38,7 @@ func init() {
 		},
 		{
 			name:  "Commits", // the PR's, when gh-dash opened it (commits.go)
-			hints: "↑↓ choose · enter show its diff · tab next pane · q quit",
+			hints: "↑↓ choose · enter show its diff",
 			avail: func(m *model) bool { return m.target.dash },
 			view:  (*model).commitLines,
 			key:   (*model).commitKey,
@@ -47,7 +47,7 @@ func init() {
 		},
 		{
 			name:  "Conversations", // review threads and Claude's (conversations.go)
-			hints: "↑↓ choose · enter open · tab next pane · q quit",
+			hints: "↑↓ choose · enter open",
 			avail: func(m *model) bool { return m.target.dash || len(m.allNotes()) > 0 },
 			view:  (*model).noteLines,
 			key:   (*model).noteKey,

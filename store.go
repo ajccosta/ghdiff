@@ -150,7 +150,11 @@ func (m *model) readStore() (savedFile, time.Time) {
 // addSaved places a saved conversation on its lines, or keeps it aside.
 func (m *model) addSaved(s savedConvo) {
 	var spans []span
-	for _, r := range append([]savedRange{s.savedRange}, s.More...) {
+	var rs []savedRange // none for the whole diff
+	if s.Path != "" {
+		rs = append([]savedRange{s.savedRange}, s.More...)
+	}
+	for _, r := range rs {
 		fi, lo := m.place(r)
 		if fi < 0 {
 			m.unplaced = append(m.unplaced, s)

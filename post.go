@@ -66,6 +66,9 @@ func ghSide(l Line) (string, int) {
 // postBlocked is why the conversation can't be a GitHub review comment, or
 // "": a comment is on one range of lines in one hunk.
 func (m *model) postBlocked() string {
+	if len(m.chat.spans) == 0 {
+		return "A conversation on the whole diff has no lines to comment on, so it can't be posted."
+	}
 	if len(m.chat.spans) > 1 {
 		return "Only a conversation on one range of lines can be posted; this one has several."
 	}

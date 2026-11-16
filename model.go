@@ -392,6 +392,10 @@ func (m *model) key(k string) tea.Cmd {
 		m.relayout()
 		m.jumpTo(fi)
 		return nil
+	case "a": // nothing selected (in the diff or a left pane): about the whole diff
+		m.focus = focusDiff
+		m.newChat(nil)
+		return nil
 	case "C", "X":
 		all := len(m.collapsed) < len(m.files) || anyFalse(m.collapsed)
 		for i := range m.files {
@@ -545,9 +549,9 @@ func (m *model) View() tea.View {
 	}
 
 	// Footer.
-	hints := "v select · n/p next/prev file · c collapse · t tree · q quit"
+	hints := "v select · a ask Claude · n/p next/prev file · c collapse · t tree · q quit"
 	if m.usedClaude() {
-		hints = "v select · n/p next/prev file · c collapse · t tree · s Claude side/below · q quit"
+		hints = "v select · a ask Claude · n/p next/prev file · c collapse · t tree · s Claude side/below · q quit"
 	}
 	if m.away {
 		hints = "^O back to Claude · s side/below · v select other lines · n/p file · t tree · q quit"
@@ -572,7 +576,7 @@ func (m *model) View() tea.View {
 			}
 		}
 	} else if m.focus == focusTree {
-		hints = m.leftPane().hints
+		hints = m.leftPane().hints + " · a ask Claude · tab next pane · q quit"
 	}
 	if !m.away && m.chat == nil && m.thread == nil && !m.sel.on && m.focus == focusDiff {
 		hints += " · h help"

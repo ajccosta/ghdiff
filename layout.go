@@ -308,7 +308,7 @@ const helpText = `ghdiff keys
 
 Diff
   v           cursor; v again starts selecting
-  a           ask Claude about the selection
+  a           ask Claude about the selection, or the whole diff
   c           comment on the selection on the PR
   y           copy the selection
   o / r       open the Claude conversation / review thread on the line
