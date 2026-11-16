@@ -118,10 +118,13 @@ func (m *model) termOrigin() (x, y int) {
 // goes where the press went.
 func (m *model) toTerm(ev tea.MouseMsg) bool {
 	c := m.chat
-	if c == nil || c.term == nil || !c.term.fullScreen() || m.help || m.confirmPost {
+	if c == nil || c.term == nil || !c.term.fullScreen() || m.help || m.confirmPost || m.resizing() {
 		return false
 	}
 	mo := ev.Mouse()
+	if _, click := ev.(tea.MouseClickMsg); click && m.borderAt(mo.X, mo.Y) != dragNone {
+		return false // a border's grab area reaches into the pane
+	}
 	x0, y0 := m.termOrigin()
 	x, y := mo.X-x0, mo.Y-y0
 	in := m.inPane(mo.X, mo.Y) && x >= 0 && y >= 0 && x < c.term.w && y < c.term.h
@@ -141,18 +144,37 @@ func (m *model) toTerm(ev tea.MouseMsg) bool {
 	return true
 }
 
-// borderAt is the border at x, y that a drag resizes, if any.
+// borderAt is the border at x, y that a drag resizes, if any: the border's
+// own cell or the one on either side, since one cell is hard to hit (the
+// tree's only on its own side: the diff's first column has the ● marks).
 func (m *model) borderAt(x, y int) drag {
 	tw, cw := m.treeWidth(), m.chatWidth()
+	near := func(a, b int) bool { return a >= b-1 && a <= b+1 }
 	switch {
-	case tw > 0 && x == tw && y >= 1 && y <= m.paneHeight():
+	case tw > 0 && (x == tw-1 || x == tw) && y >= 1 && y <= m.paneHeight():
 		return dragTree
-	case cw > 0 && x == m.width-cw-1 && y >= 1 && y <= m.paneHeight():
+	case cw > 0 && near(x, m.width-cw-1) && y >= 1 && y <= m.paneHeight():
 		return dragPaneW
-	case m.paneShown() && cw == 0 && y == m.paneHeight()+1:
+	case m.paneShown() && cw == 0 && near(y, m.paneHeight()+1):
 		return dragPaneH
 	}
 	return dragNone
+}
+
+// borderPos is where border d is: its column, or its row for dragPaneH.
+func (m *model) borderPos(d drag) int {
+	switch d {
+	case dragTree:
+		return m.treeWidth()
+	case dragPaneW:
+		return m.width - m.chatWidth() - 1
+	}
+	return m.paneHeight() + 1
+}
+
+// resizing: a held button is dragging a border.
+func (m *model) resizing() bool {
+	return m.drag != dragNone && m.drag != dragSel
 }
 
 func (m *model) mouseClick(msg tea.MouseClickMsg) tea.Cmd {
@@ -162,7 +184,10 @@ func (m *model) mouseClick(msg tea.MouseClickMsg) tea.Cmd {
 		return nil
 	}
 	if d := m.borderAt(mo.X, mo.Y); d != dragNone {
-		m.drag = d
+		m.drag, m.grab = d, m.borderPos(d)-mo.X
+		if d == dragPaneH {
+			m.grab = m.borderPos(d) - mo.Y
+		}
 		return nil
 	}
 	if !m.inPane(mo.X, mo.Y) && m.paneOpen() && !m.away && !m.consent && !m.confirmPost {
@@ -247,11 +272,11 @@ func (m *model) mouseMotion(msg tea.MouseMotionMsg) {
 	mo := msg.Mouse()
 	switch m.drag {
 	case dragTree:
-		m.TreeW = mo.X
+		m.TreeW = mo.X + m.grab
 	case dragPaneW:
-		m.PaneW = m.width - mo.X - 1
+		m.PaneW = m.width - (mo.X + m.grab) - 1
 	case dragPaneH:
-		m.PaneH = m.height - 1 - mo.Y
+		m.PaneH = m.height - 1 - (mo.Y + m.grab)
 	case dragSel:
 		// Extend to the line under the pointer, across hunks and files.
 		r := m.diffRow(mo.Y)
@@ -273,7 +298,7 @@ func (m *model) mouseMotion(msg tea.MouseMotionMsg) {
 }
 
 func (m *model) mouseRelease() {
-	if m.drag != dragNone && m.drag != dragSel {
+	if m.resizing() {
 		m.saveSettings()
 	}
 	m.drag = dragNone

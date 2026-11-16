@@ -43,6 +43,7 @@ type model struct {
 	flash string // a one-off note for the footer, cleared by the next key
 	help  bool   // the help pane (h or ?) is showing
 	drag  drag   // what the held mouse button moves
+	grab  int    // how far the border being dragged is from the pointer
 	// termPress: the held mouse button was pressed over Claude Code.
 	termPress bool
 	sizes

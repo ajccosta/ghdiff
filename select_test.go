@@ -164,3 +164,27 @@ func TestClaudeConversationIsANoteOnItsLine(t *testing.T) {
 		t.Fatal("clicking ● did not reopen the conversation")
 	}
 }
+
+func TestBorderGrabsACellAside(t *testing.T) {
+	for _, side := range []bool{false, true} {
+		m := newSelTestModel(t)
+		m.side = side
+		m.Update(tea.WindowSizeMsg{Width: 200, Height: 40})
+		m.newChat([]span{{0, 1, 1}})
+		m.typing = false
+		m.relayout()
+		size := func() int { return m.chatHeight() }
+		x, y, dx, dy := 5, m.paneHeight()+2, 0, -4 // the row under the border
+		if side {
+			size = m.chatWidth
+			x, y, dx, dy = m.width-m.chatWidth(), 5, -4, 0 // the column right of it
+		}
+		before := size()
+		m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		m.Update(tea.MouseMotionMsg{X: x + dx, Y: y + dy, Button: tea.MouseLeft})
+		m.Update(tea.MouseReleaseMsg{X: x + dx, Y: y + dy, Button: tea.MouseLeft})
+		if size() != before+4 {
+			t.Fatalf("side %v: dragging next to the border: pane %d→%d, want %d", side, before, size(), before+4)
+		}
+	}
+}
