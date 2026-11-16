@@ -2,7 +2,9 @@ package main
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 )
@@ -15,6 +17,8 @@ type note interface {
 	title(m *model) string         // the box's heading for it
 	body(m *model, w int) []string // what it says, w columns wide
 	open(m *model, same []note)    // open it; same are the box's notes of its kind
+	mark(m *model) string          // its gutter mark, coloured
+	summary() (string, time.Time)  // a line of what it says, and when it last changed
 }
 
 // notesAt are the notes whose mark is on line li of file fi.
@@ -44,6 +48,19 @@ func (n threadNote) title(m *model) string {
 }
 
 func (n threadNote) body(m *model, w int) []string { return m.threadBody(n.t, w) }
+
+func (n threadNote) mark(m *model) string {
+	return lipgloss.NewStyle().Foreground(m.theme.ModFg).Render("◆")
+}
+
+func (n threadNote) summary() (string, time.Time) {
+	first, last := n.t.comments[0], n.t.comments[len(n.t.comments)-1]
+	s := first.author + ": " + firstLine(first.body)
+	if r := len(n.t.comments) - 1; r > 0 {
+		s += " · " + plural(r, "1 reply", strconv.Itoa(r)+" replies")
+	}
+	return s, last.created
+}
 
 func (n threadNote) open(m *model, same []note) {
 	var ts []*thread
@@ -85,6 +102,18 @@ func (n convoNote) body(m *model, w int) []string {
 	return out
 }
 
+func (n convoNote) mark(m *model) string {
+	return lipgloss.NewStyle().Foreground(m.theme.Accent).Render("●")
+}
+
+func (n convoNote) summary() (string, time.Time) {
+	s := "You: " + firstLine(n.c.turns[0].q)
+	if n.c.term != nil {
+		s = "running · " + s
+	}
+	return s, n.c.created
+}
+
 func (n convoNote) open(m *model, same []note) {
 	var cs []*convo
 	for _, o := range same {
@@ -107,3 +136,13 @@ func (m *model) openNote(n note, ns []note) {
 }
 
 func sameKind(a, b note) bool { return reflect.TypeOf(a) == reflect.TypeOf(b) }
+
+// firstLine is s's first non-blank line, trimmed.
+func firstLine(s string) string {
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			return l
+		}
+	}
+	return ""
+}

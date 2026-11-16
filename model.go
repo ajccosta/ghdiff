@@ -32,6 +32,7 @@ type model struct {
 	focus    focus // focusTree: the left pane has the keys
 	left     int   // which left pane shows (leftpane.go)
 	treeSel  int   // index into files
+	noteSel  int   // the Conversations pane's cursor
 	pin      int   // the file n/p/the tree jumped to when the view could not scroll to it, or -1
 
 	rows   []row
@@ -570,10 +571,8 @@ func (m *model) View() tea.View {
 				hints = fmt.Sprintf("%d review %s · r read · ", n, plural(n, "thread", "threads")) + hints
 			}
 		}
-	} else if m.focus == focusTree && m.leftPane().name == "Files" {
-		hints = "enter open · c collapse · tab next pane · q quit"
 	} else if m.focus == focusTree {
-		hints = "↑↓ choose · enter show its diff · tab next pane · q quit"
+		hints = m.leftPane().hints
 	}
 	if !m.away && m.chat == nil && m.thread == nil && !m.sel.on && m.focus == focusDiff {
 		hints += " · h help"

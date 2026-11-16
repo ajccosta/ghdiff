@@ -148,7 +148,8 @@ The code under each review comment on that tab is drawn by
 lines of the diff on stdin as the viewer draws them and exits.
 
 Opened from gh-dash, the left pane also has the PR's commits: `Tab` goes from
-the diff to Files, then to Commits, then back (or click their names on top).
+the diff to Files, then to Commits and Conversations, then back (or click
+their names on top).
 `↑↓` and `Enter` (or a click) show a commit's diff in place of the PR's, and
 "All commits" (when there is more than one) the whole PR again. The diffs are
 fetched once each. Claude conversations follow their lines into the new diff,
@@ -156,6 +157,15 @@ a running Claude Code with them; one whose lines are not in it stops, and
 resumes when it is opened again.
 `GHDIFF_PANE=commits` (gh-dash's "All commits") opens with the keys in the
 Commits pane.
+
+The Conversations pane, next to Commits (and on any diff that has some),
+lists everything said on the diff's lines, in the diff's order: the PR's
+review threads (`◆`, by anyone, with their first comment, replies and whether
+resolved) and the Claude conversations kept in ghdiff (`●`, with the first
+question; "running" while Claude Code is). `↑↓` and `Enter` (or a click) go to
+the lines and open it, as a click on its mark does. Conversations whose lines
+are not in the diff shown (another commit's) are counted at the bottom.
+`GHDIFF_PANE=conversations` opens with the keys there.
 
 ## As git's diff pager
 
