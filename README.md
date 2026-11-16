@@ -18,6 +18,11 @@ ghdiff --pr N [-R owner/repo]
 ghdiff --commit SHA [-R owner/repo]
 ```
 
+GitHub won't send a PR diff over 20,000 lines. For one that large, `--pr` (and
+gh-dash's "All commits") fetches the PR's head and base into a local clone
+(gh-dash's `repoPaths` entry, or the repo ghdiff runs in) and git makes the
+diff there.
+
 Keys: `↑↓`/`jk` scroll · `space`/`b` page · `n`/`p` next/previous file ·
 `←` or `Tab` file tree (`↑↓` pick, `Enter`/`→` open) · `c` collapse file ·
 `C` collapse all · `t` hide tree · `h` or `?` help · `q` quit.

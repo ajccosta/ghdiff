@@ -118,31 +118,39 @@ type chatState struct {
 // or the git repo around the working directory. Either must hold the diff's
 // files, and the latter must have the PR's repo as a remote when it is known.
 func findRepo(files []*File, t target) string {
+	for _, p := range clones(t) {
+		if hasFiles(p, files) {
+			return p
+		}
+	}
+	return ""
+}
+
+// clones are the local clones that may be t's repo: gh-dash's repoPaths
+// entry, then the git repo around the working directory if it has t's repo
+// as a remote (or t's repo is not known).
+func clones(t target) []string {
+	var out []string
 	if p := t.repoPath; p != "" {
 		if strings.HasPrefix(p, "~/") {
 			if home, err := os.UserHomeDir(); err == nil {
 				p = filepath.Join(home, p[2:])
 			}
 		}
-		if hasFiles(p, files) {
-			return p
-		}
+		out = append(out, p)
 	}
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	b, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
-		return ""
+		return out
 	}
-	top := strings.TrimSpace(string(out))
+	top := strings.TrimSpace(string(b))
 	if t.repo != "" {
 		remotes, _ := exec.Command("git", "-C", top, "remote", "-v").Output()
 		if !strings.Contains(strings.ToLower(string(remotes)), strings.ToLower(t.repo)) {
-			return ""
+			return out
 		}
 	}
-	if hasFiles(top, files) {
-		return top
-	}
-	return ""
+	return append(out, top)
 }
 
 func hasFiles(top string, files []*File) bool {

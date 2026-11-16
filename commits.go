@@ -226,12 +226,12 @@ func (m *model) openEntry(e int) tea.Cmd {
 		return m.showDiff(sha, raw)
 	}
 	m.loading = &sha
-	t := m.target
+	t, repo := m.target, m.repo
 	return func() tea.Msg {
 		var out []byte
 		var err error
 		if sha == "" {
-			out, err = exec.Command("gh", "pr", "diff", fmt.Sprint(t.pr), "-R", t.repo, "--color", "never").Output()
+			out, err = prDiff(t, repo)
 		} else {
 			out, err = exec.Command("gh", "api", "-H", "Accept: application/vnd.github.diff",
 				fmt.Sprintf("repos/%s/commits/%s", t.repo, sha)).Output()
@@ -241,6 +241,43 @@ func (m *model) openEntry(e int) tea.Cmd {
 		}
 		return diffMsg{sha: sha, raw: out}
 	}
+}
+
+// prDiff is the whole PR's diff. GitHub refuses one over 20,000 lines; then
+// git makes it in the local clone repo, if there is one, from the PR's head
+// and base fetched into refs it removes after.
+func prDiff(t target, repo string) ([]byte, error) {
+	out, err := exec.Command("gh", "pr", "diff", fmt.Sprint(t.pr), "-R", t.repo, "--color", "never").Output()
+	if err == nil || !strings.Contains(ghErr(err), "too_large") {
+		return out, err
+	}
+	if repo == "" {
+		return nil, fmt.Errorf("#%d's diff is too large for GitHub to send; run ghdiff in a clone of %s, or add it to gh-dash's repoPaths, to have git make it", t.pr, t.repo)
+	}
+	b, err := exec.Command("gh", "pr", "view", fmt.Sprint(t.pr), "-R", t.repo,
+		"--json", "baseRefName", "-q", ".baseRefName").Output()
+	if err != nil {
+		return nil, err
+	}
+	base, head := "refs/ghdiff/base", fmt.Sprintf("refs/ghdiff/pr-%d", t.pr)
+	git := func(args ...string) ([]byte, error) {
+		out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).Output()
+		if ee, ok := err.(*exec.ExitError); ok {
+			err = fmt.Errorf("git %s: %s", args[0], strings.TrimSpace(string(ee.Stderr)))
+		}
+		return out, err
+	}
+	defer func() {
+		for _, r := range []string{base, head} {
+			git("update-ref", "-d", r)
+		}
+	}()
+	if _, err := git("fetch", "--quiet", "--no-tags", "https://github.com/"+t.repo,
+		"+refs/heads/"+strings.TrimSpace(string(b))+":"+base,
+		fmt.Sprintf("+refs/pull/%d/head:%s", t.pr, head)); err != nil {
+		return nil, err
+	}
+	return git("diff", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", base+"..."+head)
 }
 
 func (m *model) gotDiff(msg diffMsg) tea.Cmd {

@@ -97,8 +97,26 @@ func main() {
 		if repo != "" {
 			ghArgs = append(ghArgs, "-R", repo)
 		}
-		input = run("gh", append(ghArgs, rest...)...)
 		tgt.pr, _ = strconv.Atoi(args[1])
+		if len(rest) > 0 || tgt.pr == 0 {
+			input = run("gh", append(ghArgs, rest...)...)
+			break
+		}
+		if repo == "" {
+			repo = strings.TrimSpace(string(run("gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner")))
+		}
+		t := tgt
+		t.repo = repo
+		var clone string
+		if cs := clones(t); len(cs) > 0 {
+			clone = cs[0]
+		}
+		b, err := prDiff(t, clone)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ghdiff: %s\n", ghErr(err))
+			os.Exit(1)
+		}
+		input = b
 		if title == "" {
 			title = strings.TrimSpace(repo + "#" + args[1])
 		}
