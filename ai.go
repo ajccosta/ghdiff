@@ -47,6 +47,9 @@ type convo struct {
 	term     *term
 	starting bool
 	startErr string
+	seen     int64 // the transcript's size when its turns were last read
+
+	saved string // its turns as last saved or read here (savedSig)
 
 	// Posting to the PR (post.go).
 	commentID int64 // the thread's first comment, once posted
@@ -94,6 +97,7 @@ type chatState struct {
 	here        []*convo     // the ones on the open conversation's lines, for < >
 	unplaced    []savedConvo // saved ones whose lines are not in this diff
 	store       string       // the file they are saved in (store.go)
+	storeMod    time.Time    // its time when last read or written here
 	chat        *convo       // open in the pane
 	threads     []*thread    // the PR's review threads (threads.go)
 	threadsHere []*thread    // the ones on the open thread's lines, for < >

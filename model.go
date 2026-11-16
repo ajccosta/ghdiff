@@ -111,7 +111,7 @@ func (m *model) load(fi int) {
 }
 
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(tea.RequestBackgroundColor, m.fetchThreads(), m.fetchCommits())
+	return tea.Batch(tea.RequestBackgroundColor, m.fetchThreads(), m.fetchCommits(), watch())
 }
 
 func (m *model) treeWidth() int {
@@ -277,6 +277,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, msg.t.wait()
 	case termDoneMsg:
 		m.termDone(msg.t)
+	case watchMsg:
+		m.watched()
+		return m, watch()
 	case tea.PasteMsg:
 		if m.termFocused() {
 			m.chat.term.paste(msg.Content)

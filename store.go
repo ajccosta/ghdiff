@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // Conversations are kept on disk per diff (a PR, or a local repo), so they
@@ -125,39 +127,112 @@ func (m *model) loadConvos() {
 	if m.store == "" {
 		return
 	}
-	b, err := os.ReadFile(m.store)
-	if err != nil {
-		return
-	}
-	var sf savedFile
-	if json.Unmarshal(b, &sf) != nil {
-		return
-	}
+	sf, mod := m.readStore()
+	m.storeMod = mod
 	for _, s := range sf.Convos {
-		var spans []span
-		for _, r := range append([]savedRange{s.savedRange}, s.More...) {
-			fi, lo := m.place(r)
-			if fi < 0 {
-				spans = nil
-				break
-			}
-			spans = append(spans, span{fi, lo, lo + len(r.Lines) - 1})
-		}
-		if spans == nil {
-			m.unplaced = append(m.unplaced, s)
-			continue
-		}
-		if s.Access == "" && s.ReadRepo {
-			s.Access = "read"
-		}
-		c := &convo{spans: spans, session: s.Session,
-			dir: s.Dir, access: s.Access, code: s.Code, commentID: s.CommentID, posted: s.Posted, created: s.Created}
-		for _, t := range s.Turns {
-			c.turns = append(c.turns, turn{q: t.Q, a: t.A, err: t.Err})
-		}
-		m.refreshTurns(c)
-		m.convos = append(m.convos, c)
+		m.addSaved(s)
 	}
+}
+
+// readStore is the saved file, and when it last changed (zero if missing).
+func (m *model) readStore() (savedFile, time.Time) {
+	var sf savedFile
+	st, err := os.Stat(m.store)
+	if err != nil {
+		return sf, time.Time{}
+	}
+	if b, err := os.ReadFile(m.store); err != nil || json.Unmarshal(b, &sf) != nil {
+		sf = savedFile{}
+	}
+	return sf, st.ModTime()
+}
+
+// addSaved places a saved conversation on its lines, or keeps it aside.
+func (m *model) addSaved(s savedConvo) {
+	var spans []span
+	for _, r := range append([]savedRange{s.savedRange}, s.More...) {
+		fi, lo := m.place(r)
+		if fi < 0 {
+			m.unplaced = append(m.unplaced, s)
+			return
+		}
+		spans = append(spans, span{fi, lo, lo + len(r.Lines) - 1})
+	}
+	if s.Access == "" && s.ReadRepo {
+		s.Access = "read"
+	}
+	c := &convo{spans: spans, session: s.Session,
+		dir: s.Dir, access: s.Access, code: s.Code, commentID: s.CommentID, posted: s.Posted, created: s.Created}
+	m.takeTurns(c, s)
+	m.convos = append(m.convos, c)
+}
+
+func (m *model) takeTurns(c *convo, s savedConvo) {
+	c.saved = savedSig(s)
+	c.turns = nil
+	for _, t := range s.Turns {
+		c.turns = append(c.turns, turn{q: t.Q, a: t.A, err: t.Err})
+	}
+	m.refreshTurns(c)
+}
+
+// savedSig is how many turns s has and its last, to see when another window
+// changed it.
+func savedSig(s savedConvo) string {
+	if n := len(s.Turns); n > 0 {
+		return strconv.Itoa(n) + s.Turns[n-1].Q + s.Turns[n-1].A
+	}
+	return ""
+}
+
+// convoKey tells conversations apart across ghdiff windows: by session, or
+// by when it started while it has none.
+func convoKey(session string, created time.Time) string {
+	if session != "" {
+		return session
+	}
+	return strconv.FormatInt(created.UnixNano(), 10)
+}
+
+// syncStore takes in what other ghdiff windows saved since this one last
+// read or wrote the file: conversations it doesn't have, and the turns of
+// ones another window changed (unless running or waiting on them here). True
+// if anything changed.
+func (m *model) syncStore() bool {
+	if m.store == "" {
+		return false
+	}
+	sf, mod := m.readStore()
+	if mod.Equal(m.storeMod) {
+		return false
+	}
+	m.storeMod = mod
+	known := map[string]*convo{}
+	for _, c := range m.convos {
+		known[convoKey(c.session, c.created)] = c
+	}
+	aside := map[string]int{}
+	for i, s := range m.unplaced {
+		aside[convoKey(s.Session, s.Created)] = i
+	}
+	changed := false
+	for _, s := range sf.Convos {
+		k := convoKey(s.Session, s.Created)
+		if c, ok := known[k]; ok {
+			if savedSig(s) != c.saved && c.term == nil && !c.busy {
+				before := lastTurn(c)
+				m.takeTurns(c, s)
+				c.commentID, c.posted = s.CommentID, s.Posted
+				changed = changed || lastTurn(c) != before
+			}
+		} else if i, ok := aside[k]; ok {
+			m.unplaced[i] = s
+		} else {
+			m.addSaved(s)
+			changed = true
+		}
+	}
+	return changed
 }
 
 // place finds where a saved conversation's lines are in this diff,
@@ -186,11 +261,13 @@ func (m *model) place(s savedRange) (file, lo int) {
 	return file, lo
 }
 
-// saveConvos writes every conversation with at least one question.
+// saveConvos writes every conversation with at least one question, with
+// what other ghdiff windows saved meanwhile.
 func (m *model) saveConvos() {
 	if m.store == "" {
 		return
 	}
+	m.syncStore()
 	sf := savedFile{Convos: append([]savedConvo{}, m.unplaced...)}
 	for _, c := range m.convos {
 		if len(c.turns) == 0 {
@@ -216,6 +293,7 @@ func (m *model) saveConvos() {
 			}
 			s.Turns = append(s.Turns, savedTurn{Q: t.q, A: t.a, Err: t.err})
 		}
+		c.saved = savedSig(s)
 		sf.Convos = append(sf.Convos, s)
 	}
 	b, err := json.MarshalIndent(sf, "", "  ")
@@ -224,9 +302,50 @@ func (m *model) saveConvos() {
 	}
 	os.MkdirAll(filepath.Dir(m.store), 0o755)
 	tmp := m.store + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		os.Rename(tmp, m.store)
+	if os.WriteFile(tmp, b, 0o600) == nil && os.Rename(tmp, m.store) == nil {
+		if st, err := os.Stat(m.store); err == nil {
+			m.storeMod = st.ModTime()
+		}
 	}
+}
+
+type watchMsg struct{}
+
+// watch is the next look at the running Claude Codes' transcripts and at the
+// saved file: a conversation is kept from its first question on, and other
+// ghdiff windows' conversations show up here.
+func watch() tea.Cmd {
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg { return watchMsg{} })
+}
+
+func (m *model) watched() {
+	asked := false
+	for _, c := range m.convos {
+		if c.term == nil {
+			continue
+		}
+		st, err := os.Stat(transcriptPath(c.session))
+		if err != nil || st.Size() == c.seen {
+			continue
+		}
+		c.seen = st.Size()
+		before := lastTurn(c)
+		m.refreshTurns(c)
+		asked = asked || lastTurn(c) != before
+	}
+	if asked {
+		m.saveConvos()
+	} else {
+		m.syncStore()
+	}
+}
+
+// lastTurn is how many turns c has and its last, to see when they change.
+func lastTurn(c *convo) string {
+	if n := len(c.turns); n > 0 {
+		return strconv.Itoa(n) + c.turns[n-1].q + c.turns[n-1].a
+	}
+	return ""
 }
 
 // covers reports whether line li of file fi is in one of c's ranges.
